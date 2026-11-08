@@ -1,0 +1,30 @@
+{
+    "schema_version": "capture.plan/1.0",
+    "plan_id": "synthetic-plan-001",
+    "revision": 1,
+    "session_id": "synthetic-session-001",
+    "region_id": "synthetic-region-001",
+    "map_coordinates": {
+        "coordinate_frame_id": "synthetic-map-001",
+        "unit": "map_pixel",
+        "axes": "x_right_y_down",
+        "heading_unit": "degree",
+        "heading_convention": "clockwise_from_map_up",
+        "scale_status": "arbitrary"
+    },
+    "waypoints": [
+        {
+            "waypoint_id": "synthetic-waypoint-001",
+            "segment_id": "synthetic-segment-001",
+            "position_xy": [
+                10,
+                20
+            ],
+            "camera_intent": {
+                "yaw_degrees": null,
+                "pitch_degrees": null,
+                "settle_required": true
+            }
+        }
+    ]
+}

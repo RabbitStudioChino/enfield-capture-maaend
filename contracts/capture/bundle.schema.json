@@ -1,0 +1,59 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://schemas.endfield.local/capture/1.0/bundle.schema.json",
+    "title": "Capture bundle",
+    "type": "object",
+    "required": [
+        "schema_version",
+        "bundle_id",
+        "session_id",
+        "status",
+        "source",
+        "session_uri",
+        "plan_uri",
+        "frames_uri",
+        "batch_uris",
+        "files"
+    ],
+    "properties": {
+        "schema_version": {
+            "const": "capture.bundle/1.0"
+        },
+        "bundle_id": {
+            "$ref": "https://schemas.endfield.local/capture/1.0/common.schema.json#/$defs/id"
+        },
+        "session_id": {
+            "$ref": "https://schemas.endfield.local/capture/1.0/common.schema.json#/$defs/id"
+        },
+        "status": {
+            "const": "frozen"
+        },
+        "source": {
+            "$ref": "https://schemas.endfield.local/capture/1.0/common.schema.json#/$defs/source"
+        },
+        "session_uri": {
+            "const": "session.json"
+        },
+        "plan_uri": {
+            "const": "plan.json"
+        },
+        "frames_uri": {
+            "const": "frames.jsonl"
+        },
+        "batch_uris": {
+            "type": "array",
+            "items": {
+                "$ref": "https://schemas.endfield.local/capture/1.0/common.schema.json#/$defs/text"
+            },
+            "minItems": 1,
+            "uniqueItems": true
+        },
+        "files": {
+            "type": "array",
+            "items": {
+                "$ref": "https://schemas.endfield.local/capture/1.0/common.schema.json#/$defs/file"
+            },
+            "minItems": 4
+        }
+    }
+}

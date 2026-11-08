@@ -1,0 +1,39 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://schemas.endfield.local/capture/1.0/session.schema.json",
+    "title": "Capture session",
+    "type": "object",
+    "required": [
+        "schema_version",
+        "session_id",
+        "clock",
+        "source",
+        "controller_kind",
+        "calibration_groups"
+    ],
+    "properties": {
+        "schema_version": {
+            "const": "capture.session/1.0"
+        },
+        "session_id": {
+            "$ref": "https://schemas.endfield.local/capture/1.0/common.schema.json#/$defs/id"
+        },
+        "clock": {
+            "$ref": "https://schemas.endfield.local/capture/1.0/common.schema.json#/$defs/clock"
+        },
+        "source": {
+            "$ref": "https://schemas.endfield.local/capture/1.0/common.schema.json#/$defs/source"
+        },
+        "controller_kind": {
+            "type": "string",
+            "minLength": 1
+        },
+        "calibration_groups": {
+            "type": "array",
+            "items": {
+                "$ref": "https://schemas.endfield.local/capture/1.0/common.schema.json#/$defs/calibration"
+            },
+            "minItems": 1
+        }
+    }
+}

@@ -1,0 +1,46 @@
+{
+    "schema_version": "capture.bundle/1.0",
+    "bundle_id": "synthetic-bundle-001",
+    "session_id": "synthetic-session-001",
+    "status": "frozen",
+    "source": {
+        "kind": "synthetic",
+        "upstream_commit": "8cccaaec8f59f4b4689b59db84a39d25066ff5ec",
+        "collector_version": "architecture-fixture/1.0",
+        "submodule_commits": {},
+        "game_version": null,
+        "description": "Self-authored synthetic RGB gradient. No game, controller, navigation, or reconstruction was executed."
+    },
+    "session_uri": "session.json",
+    "plan_uri": "plan.json",
+    "frames_uri": "frames.jsonl",
+    "batch_uris": [
+        "batches/synthetic-batch-001.json"
+    ],
+    "files": [
+        {
+            "uri": "batches/synthetic-batch-001.json",
+            "sha256": "3be99f1f2137c4b373bc249935554c35d93edc8905642205ad58eb51189ba4a9"
+        },
+        {
+            "uri": "frames.jsonl",
+            "sha256": "4f3ca38ba63ef98117c27971e1697cb059cafa09a8b79dec3313ec024bf09775"
+        },
+        {
+            "uri": "images/raw/frame-000001.png",
+            "sha256": "60f7c5b400dd2e8a4e32aec1d91b2822cad5727a7f77b3d42f8b4faf842a5fb3"
+        },
+        {
+            "uri": "plan.json",
+            "sha256": "1a5edb787bed592b533b53679c9ee237de32f3b36811e5b2277605896127b615"
+        },
+        {
+            "uri": "records/synthetic-batch-001.frames.jsonl",
+            "sha256": "4f3ca38ba63ef98117c27971e1697cb059cafa09a8b79dec3313ec024bf09775"
+        },
+        {
+            "uri": "session.json",
+            "sha256": "8d4ca95cf5fe0c0c613f93e367364f3711ba8f0104f398cae534a46ff650f919"
+        }
+    ]
+}

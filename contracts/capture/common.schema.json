@@ -1,0 +1,332 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://schemas.endfield.local/capture/1.0/common.schema.json",
+    "$defs": {
+        "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+        },
+        "text": {
+            "type": "string",
+            "minLength": 1
+        },
+        "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+        },
+        "nanoseconds": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)$"
+        },
+        "xy": {
+            "type": "array",
+            "prefixItems": [
+                {
+                    "type": "number"
+                },
+                {
+                    "type": "number"
+                }
+            ],
+            "items": false,
+            "minItems": 2,
+            "maxItems": 2
+        },
+        "file": {
+            "type": "object",
+            "required": [
+                "uri",
+                "sha256"
+            ],
+            "properties": {
+                "uri": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                }
+            }
+        },
+        "source": {
+            "type": "object",
+            "required": [
+                "kind",
+                "upstream_commit",
+                "collector_version",
+                "submodule_commits",
+                "game_version",
+                "description"
+            ],
+            "properties": {
+                "kind": {
+                    "enum": [
+                        "synthetic",
+                        "game_capture"
+                    ]
+                },
+                "upstream_commit": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{40}$"
+                },
+                "collector_version": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "submodule_commits": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{40}$"
+                    }
+                },
+                "game_version": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "minLength": 1
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "description": {
+                    "type": "string",
+                    "minLength": 1
+                }
+            }
+        },
+        "position_observation": {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "required": [
+                        "status",
+                        "value"
+                    ],
+                    "properties": {
+                        "status": {
+                            "const": "available"
+                        },
+                        "value": {
+                            "type": "array",
+                            "prefixItems": [
+                                {
+                                    "type": "number"
+                                },
+                                {
+                                    "type": "number"
+                                }
+                            ],
+                            "items": false,
+                            "minItems": 2,
+                            "maxItems": 2
+                        }
+                    }
+                },
+                {
+                    "type": "object",
+                    "required": [
+                        "status",
+                        "value"
+                    ],
+                    "properties": {
+                        "status": {
+                            "enum": [
+                                "unavailable",
+                                "failed",
+                                "not_run"
+                            ]
+                        },
+                        "value": {
+                            "type": "null"
+                        }
+                    }
+                }
+            ]
+        },
+        "heading_observation": {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "required": [
+                        "status",
+                        "value"
+                    ],
+                    "properties": {
+                        "status": {
+                            "const": "available"
+                        },
+                        "value": {
+                            "type": "number",
+                            "minimum": 0,
+                            "exclusiveMaximum": 360
+                        }
+                    }
+                },
+                {
+                    "type": "object",
+                    "required": [
+                        "status",
+                        "value"
+                    ],
+                    "properties": {
+                        "status": {
+                            "enum": [
+                                "unavailable",
+                                "failed",
+                                "not_run"
+                            ]
+                        },
+                        "value": {
+                            "type": "null"
+                        }
+                    }
+                }
+            ]
+        },
+        "floor_observation": {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "required": [
+                        "status",
+                        "value"
+                    ],
+                    "properties": {
+                        "status": {
+                            "const": "available"
+                        },
+                        "value": {
+                            "type": "number"
+                        }
+                    }
+                },
+                {
+                    "type": "object",
+                    "required": [
+                        "status",
+                        "value"
+                    ],
+                    "properties": {
+                        "status": {
+                            "enum": [
+                                "unavailable",
+                                "failed",
+                                "not_run"
+                            ]
+                        },
+                        "value": {
+                            "type": "null"
+                        }
+                    }
+                }
+            ]
+        },
+        "clock": {
+            "type": "object",
+            "required": [
+                "clock_id",
+                "utc_anchor",
+                "monotonic_anchor_ns",
+                "utc_uncertainty_ns"
+            ],
+            "properties": {
+                "clock_id": {
+                    "$ref": "https://schemas.endfield.local/capture/1.0/common.schema.json#/$defs/id"
+                },
+                "utc_anchor": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$"
+                },
+                "monotonic_anchor_ns": {
+                    "$ref": "https://schemas.endfield.local/capture/1.0/common.schema.json#/$defs/nanoseconds"
+                },
+                "utc_uncertainty_ns": {
+                    "anyOf": [
+                        {
+                            "$ref": "https://schemas.endfield.local/capture/1.0/common.schema.json#/$defs/nanoseconds"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                }
+            }
+        },
+        "calibration": {
+            "type": "object",
+            "required": [
+                "calibration_group_id",
+                "image_width",
+                "image_height",
+                "camera_mode",
+                "fov_degrees",
+                "intrinsics_prior",
+                "image_coordinate_convention"
+            ],
+            "properties": {
+                "calibration_group_id": {
+                    "$ref": "https://schemas.endfield.local/capture/1.0/common.schema.json#/$defs/id"
+                },
+                "image_width": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "image_height": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "camera_mode": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "fov_degrees": {
+                    "anyOf": [
+                        {
+                            "type": "number",
+                            "exclusiveMinimum": 0,
+                            "exclusiveMaximum": 180
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "intrinsics_prior": {
+                    "type": "null"
+                },
+                "image_coordinate_convention": {
+                    "const": "top_left_x_right_y_down_pixel_centers"
+                }
+            }
+        },
+        "session_identity": {
+            "type": "object",
+            "required": [
+                "session_id",
+                "clock",
+                "source",
+                "controller_kind"
+            ],
+            "properties": {
+                "session_id": {
+                    "$ref": "https://schemas.endfield.local/capture/1.0/common.schema.json#/$defs/id"
+                },
+                "clock": {
+                    "$ref": "https://schemas.endfield.local/capture/1.0/common.schema.json#/$defs/clock"
+                },
+                "source": {
+                    "$ref": "https://schemas.endfield.local/capture/1.0/common.schema.json#/$defs/source"
+                },
+                "controller_kind": {
+                    "type": "string",
+                    "minLength": 1
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,263 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://schemas.endfield.local/capture/1.0/frame.schema.json",
+    "title": "Capture frame",
+    "type": "object",
+    "required": [
+        "schema_version",
+        "session_id",
+        "segment_id",
+        "frame_id",
+        "waypoint_id",
+        "calibration_group_id",
+        "timing",
+        "image",
+        "navigation_observation",
+        "camera_estimate_ref",
+        "control",
+        "quality"
+    ],
+    "properties": {
+        "schema_version": {
+            "const": "capture.frame/1.0"
+        },
+        "session_id": {
+            "$ref": "https://schemas.endfield.local/capture/1.0/common.schema.json#/$defs/id"
+        },
+        "segment_id": {
+            "$ref": "https://schemas.endfield.local/capture/1.0/common.schema.json#/$defs/id"
+        },
+        "frame_id": {
+            "$ref": "https://schemas.endfield.local/capture/1.0/common.schema.json#/$defs/id"
+        },
+        "waypoint_id": {
+            "$ref": "https://schemas.endfield.local/capture/1.0/common.schema.json#/$defs/id"
+        },
+        "calibration_group_id": {
+            "$ref": "https://schemas.endfield.local/capture/1.0/common.schema.json#/$defs/id"
+        },
+        "timing": {
+            "type": "object",
+            "required": [
+                "clock_id",
+                "request_monotonic_ns",
+                "complete_monotonic_ns",
+                "locate_complete_monotonic_ns",
+                "native_render_timestamp",
+                "timestamp_source"
+            ],
+            "properties": {
+                "clock_id": {
+                    "$ref": "https://schemas.endfield.local/capture/1.0/common.schema.json#/$defs/id"
+                },
+                "request_monotonic_ns": {
+                    "$ref": "https://schemas.endfield.local/capture/1.0/common.schema.json#/$defs/nanoseconds"
+                },
+                "complete_monotonic_ns": {
+                    "$ref": "https://schemas.endfield.local/capture/1.0/common.schema.json#/$defs/nanoseconds"
+                },
+                "locate_complete_monotonic_ns": {
+                    "anyOf": [
+                        {
+                            "$ref": "https://schemas.endfield.local/capture/1.0/common.schema.json#/$defs/nanoseconds"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "native_render_timestamp": {
+                    "type": "null"
+                },
+                "timestamp_source": {
+                    "enum": [
+                        "host_capture_api",
+                        "synthetic"
+                    ]
+                }
+            }
+        },
+        "image": {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "required": [
+                        "status",
+                        "uri",
+                        "sha256",
+                        "width",
+                        "height",
+                        "pixel_format",
+                        "backend"
+                    ],
+                    "properties": {
+                        "status": {
+                            "const": "captured"
+                        },
+                        "uri": {
+                            "$ref": "https://schemas.endfield.local/capture/1.0/common.schema.json#/$defs/text"
+                        },
+                        "sha256": {
+                            "$ref": "https://schemas.endfield.local/capture/1.0/common.schema.json#/$defs/sha256"
+                        },
+                        "width": {
+                            "type": "integer",
+                            "minimum": 1
+                        },
+                        "height": {
+                            "type": "integer",
+                            "minimum": 1
+                        },
+                        "pixel_format": {
+                            "const": "RGB8"
+                        },
+                        "backend": {
+                            "$ref": "https://schemas.endfield.local/capture/1.0/common.schema.json#/$defs/text"
+                        }
+                    }
+                },
+                {
+                    "type": "object",
+                    "required": [
+                        "status",
+                        "reason"
+                    ],
+                    "properties": {
+                        "status": {
+                            "const": "failed"
+                        },
+                        "reason": {
+                            "$ref": "https://schemas.endfield.local/capture/1.0/common.schema.json#/$defs/text"
+                        }
+                    },
+                    "not": {
+                        "anyOf": [
+                            {
+                                "required": [
+                                    "uri"
+                                ]
+                            },
+                            {
+                                "required": [
+                                    "sha256"
+                                ]
+                            },
+                            {
+                                "required": [
+                                    "width"
+                                ]
+                            },
+                            {
+                                "required": [
+                                    "height"
+                                ]
+                            },
+                            {
+                                "required": [
+                                    "pixel_format"
+                                ]
+                            },
+                            {
+                                "required": [
+                                    "backend"
+                                ]
+                            }
+                        ]
+                    }
+                }
+            ]
+        },
+        "navigation_observation": {
+            "type": "object",
+            "required": [
+                "region_id",
+                "coordinate_frame_id",
+                "position_unit",
+                "position_xy",
+                "floor_height",
+                "floor_height_unit",
+                "character_heading",
+                "camera_yaw",
+                "heading_unit",
+                "heading_convention"
+            ],
+            "properties": {
+                "region_id": {
+                    "$ref": "https://schemas.endfield.local/capture/1.0/common.schema.json#/$defs/id"
+                },
+                "coordinate_frame_id": {
+                    "$ref": "https://schemas.endfield.local/capture/1.0/common.schema.json#/$defs/id"
+                },
+                "position_unit": {
+                    "const": "map_pixel"
+                },
+                "position_xy": {
+                    "$ref": "https://schemas.endfield.local/capture/1.0/common.schema.json#/$defs/position_observation"
+                },
+                "floor_height": {
+                    "$ref": "https://schemas.endfield.local/capture/1.0/common.schema.json#/$defs/floor_observation"
+                },
+                "floor_height_unit": {
+                    "const": "navigation_unit"
+                },
+                "character_heading": {
+                    "$ref": "https://schemas.endfield.local/capture/1.0/common.schema.json#/$defs/heading_observation"
+                },
+                "camera_yaw": {
+                    "$ref": "https://schemas.endfield.local/capture/1.0/common.schema.json#/$defs/heading_observation"
+                },
+                "heading_unit": {
+                    "const": "degree"
+                },
+                "heading_convention": {
+                    "const": "clockwise_from_map_up"
+                }
+            }
+        },
+        "camera_estimate_ref": {
+            "type": "null"
+        },
+        "control": {
+            "type": "object",
+            "required": [
+                "owner",
+                "state"
+            ],
+            "properties": {
+                "owner": {
+                    "enum": [
+                        "none",
+                        "navigation",
+                        "capture",
+                        "recovery"
+                    ]
+                },
+                "state": {
+                    "$ref": "https://schemas.endfield.local/capture/1.0/common.schema.json#/$defs/text"
+                }
+            }
+        },
+        "quality": {
+            "type": "object",
+            "required": [
+                "selection_status",
+                "rejection_reasons"
+            ],
+            "properties": {
+                "selection_status": {
+                    "enum": [
+                        "pending",
+                        "accepted",
+                        "rejected"
+                    ]
+                },
+                "rejection_reasons": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "https://schemas.endfield.local/capture/1.0/common.schema.json#/$defs/text"
+                    }
+                }
+            }
+        }
+    }
+}
