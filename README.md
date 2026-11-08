@@ -30,6 +30,12 @@ Powered by [MaaFramework](https://github.com/MaaXYZ/MaaFramework) & [MXU](https:
 
 </div>
 
+## 本 Fork：enfield-capture-maaend
+
+RabbitStudioChino 的采集与离线制作项目，基于 MaaEnd 固定源码保留上游历史和许可。当前交付[详细架构](docs/capture/architecture.md)与 [CaptureBundle 契约校验](contracts/capture/README.md)。首版计划为 Windows 连接运行中的游戏，通过 CLI 和一键脚本采集；采集运行器及真实重建尚未实现和验收。独立网页仓库为 [endfield-world-web](https://github.com/RabbitStudioChino/endfield-world-web)。
+
+以下保留上游 MaaEnd 介绍与下载说明，其已有自动化能力不代表本 Fork 的采集制作功能已完成。
+
 ## 📖 使用须知
 
 这是一个**正在快速迭代**的项目，可能会有一些小 BUG 出没 🐛（我们会努力消灭它们的！）

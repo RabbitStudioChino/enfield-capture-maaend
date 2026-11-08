@@ -1,5 +1,14 @@
 # MaaEnd AI Agent 编码指南
 
+## 本 Fork 的工作约定
+
+- GitHub 账号为 RabbitStudioChino，仓库为 `enfield-capture-maaend`；保留 MaaEnd 历史、许可与控制器架构。
+- 主智能体 gpt-6-Astra-xhigh 负责架构、复杂任务与决策；编码、审查、单元测试交由 gpt-6.1-sol-xhigh 子智能体，同时最多三个，不递归扩容。
+- 用户已授权本项目自主实施、提交和推送，不中途询问或索要权限；所有文件、缓存、日志和测试临时数据限制在用户框定的工作区。
+- 每个功能点单独验证、提交并推送，格式统一为 `类型(范围): 中文摘要`。本授权针对自己的 Fork，不包含向上游提交 PR 或代用户给维护者发消息。
+- 采集首版 Windows + 运行中的游戏 + CLI / 一键脚本；离线重建独立，网页独立。后续平台适配不得将 Windows 接口扩散到采集业务层。
+- 详细设计见 `docs/capture/architecture.md`。`contracts/capture/` 为新增外部交换契约，使用严格 JSON；上游资源的 JSONC 规则保持不变。
+
 欢迎参与 MaaEnd 的开发！本指南旨在帮助 AI Agent 快速理解项目结构及编码规范，以提供更高质量的代码建议。
 
 ---
