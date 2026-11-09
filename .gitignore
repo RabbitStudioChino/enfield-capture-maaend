@@ -499,3 +499,24 @@ tools/zmdmap/data/raw/
 
 # AutoMission 本地对比用的展开数据
 tools/pipeline-generate/AutoMission/missions.pretty.json
+
+# Capture project local-only tests, samples, runtime data, and diagnostics
+local/
+/data/
+samples/
+fixtures/
+*.log
+.work/
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+__pycache__/
+*.pyc
+.venv/
+/tools/capture/tests/
+/tools/capture/test/
+/tools/reconstruction/tests/
+/tools/blender/tests/
+/tools/world-export/tests/
+/agent/cpp-algo/source/Capture/tests/
+/agent/cpp-algo/source/Capture/test/

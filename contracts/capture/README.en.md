@@ -1,6 +1,6 @@
 # CaptureBundle 1.0
 
-This directory is the authoritative source for the capture input contract. It currently provides JSON Schema 2020-12, a read-only offline validator, and a self-authored synthetic fixture. Future collectors and reconstruction consumers can integrate with this contract. Live capture and reconstruction still require implementation and acceptance testing.
+This directory is the authoritative source for the capture input contract. The repository provides JSON Schema 2020-12 and a read-only offline validator. Tests and self-authored synthetic fixtures stay in the parent workspace's `local/` directory and are never committed or uploaded to GitHub. Future collectors and reconstruction consumers can integrate with this contract. Live capture and reconstruction still require implementation and acceptance testing.
 
 ## Files and Versions
 
@@ -62,12 +62,18 @@ The isolated validator requires Python 3.9+. Dependencies are locked in [`tools/
 mkdir -p .cache/tmp
 python3 -m venv .cache/capture-venv
 TMPDIR="$PWD/.cache/tmp" .cache/capture-venv/bin/python -m pip install --cache-dir .cache/pip -r tools/capture/requirements.lock
-PYTHONDONTWRITEBYTECODE=1 .cache/capture-venv/bin/python -m tools.capture.validate contracts/capture/fixtures/synthetic-minimal
-PYTHONDONTWRITEBYTECODE=1 .cache/capture-venv/bin/python -m unittest discover -s tools/capture/tests -v
+PYTHONDONTWRITEBYTECODE=1 .cache/capture-venv/bin/python -m tools.capture.validate path/to/frozen-bundle
 ```
 
-The command returns `0` on success, `1` for data or filesystem errors, and `2` for argument errors. The Python entry point is `tools.capture.validate.validate_bundle(directory)`. It returns the manifest and frame, batch, and file counts, or raises `BundleValidationError` or a filesystem `OSError`. Temporary test copies stay under the repository's `.cache/capture-tests/` and are cleaned up automatically.
+Replace `path/to/frozen-bundle` with your frozen bundle directory. A standalone clone does not include project tests or samples. In the existing two-repository workspace, run the following commands from this repository root using the parent workspace's isolated environment and local validation files.
 
-[`fixtures/synthetic-minimal/`](./fixtures/synthetic-minimal/) contains one 16×12 RGB PNG and two synthetic frame records. The PNG was generated with Python's standard-library `struct` and `zlib`, using PNG filter `0` for each row and pixels `(x * 16, y * 20, (x + y) * 9)`, where `x=0..15` and `y=0..11`. A unit test verifies PNG chunk CRCs, dimensions, and decompressed pixels. The first frame models a valid image with unavailable navigation. The second models capture failure. All identities, map coordinates, and times are synthetic. Game control, live navigation, and visual reconstruction were never executed.
+```bash
+PYTHONDONTWRITEBYTECODE=1 ../.venv/bin/python -m tools.capture.validate ../local/samples/capture/synthetic-minimal
+PYTHONDONTWRITEBYTECODE=1 ../.venv/bin/python -m unittest discover -s ../local/qa/capture -v
+```
+
+The command returns `0` on success, `1` for data or filesystem errors, and `2` for argument errors. The Python entry point is `tools.capture.validate.validate_bundle(directory)`. It returns the manifest and frame, batch, and file counts, or raises `BundleValidationError` or a filesystem `OSError`. Temporary test copies stay under the parent workspace's `local/.cache/capture-tests/` and are cleaned up automatically.
+
+The parent workspace's `local/samples/capture/synthetic-minimal/` contains one 16×12 RGB PNG and two synthetic frame records. The PNG was generated with Python's standard-library `struct` and `zlib`, using PNG filter `0` for each row and pixels `(x * 16, y * 20, (x + y) * 9)`, where `x=0..15` and `y=0..11`. A local unit test verifies PNG chunk CRCs, dimensions, and decompressed pixels. The first frame models a valid image with unavailable navigation. The second models capture failure. All identities, map coordinates, and times are synthetic. Game control, live navigation, and visual reconstruction were never executed.
 
 Later stages will define `ReconstructionBundle`, `PreviewSnapshot`, `RescanRequest`, camera solving, and executable rescan contracts, then integrate real same-frame capture, event logs, calibration, and export acceptance testing.

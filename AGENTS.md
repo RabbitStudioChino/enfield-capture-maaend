@@ -8,6 +8,8 @@
 - 每个功能点单独验证、提交并推送，格式统一为 `类型(范围): 中文摘要`。本授权针对自己的 Fork，不包含向上游提交 PR 或代用户给维护者发消息。
 - 采集首版 Windows + 运行中的游戏 + CLI / 一键脚本；离线重建独立，网页独立。后续平台适配不得将 Windows 接口扩散到采集业务层。
 - 详细设计见 `docs/capture/architecture.md`。`contracts/capture/` 为新增外部交换契约，使用严格 JSON；上游资源的 JSONC 规则保持不变。
+- 本项目新增的测试文件、测试样本和合成示例仅存放在仓库父工作区的 `local/qa/capture/`、`local/samples/capture/`，不得提交或上传 GitHub；缓存与日志也只留本地。正式 schema 保留跟踪。MaaEnd 继承的 `tests/`、上游测试文件和模型子模块保持原状，不重写历史。
+- 必须由用户完成 Windows 实机验证时，停止推进依赖该结果的工作，给出步骤、命令、预期输出与日志收集说明，并指定工作区 `local/validation/windows-capture/<run-id>/` 为结果返还目录。收到用户结果后再继续，合成测试通过只作为本地代码检查结论。
 
 欢迎参与 MaaEnd 的开发！本指南旨在帮助 AI Agent 快速理解项目结构及编码规范，以提供更高质量的代码建议。
 

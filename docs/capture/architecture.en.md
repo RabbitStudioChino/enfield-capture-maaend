@@ -4,6 +4,8 @@ Date 2026-11-09 (Asia/Shanghai). Inputs are the [requirements](requirements.md) 
 
 This document establishes the implementation baseline. Runtime acceptance is reported separately. **Confirmed** marks requirements fixed by the user, **Fact** marks source behavior checked in this session, **Design** marks decisions awaiting implementation, and **To verify** marks conclusions that require actual devices or samples. Formal schemas and validators are within this session's implementation scope. The capture runner, reconstruction executor, and web runtime are scheduled as subsequent tasks.
 
+Implementation update, 2026-11-09: M0/C01 screenshot probing and the rendering core have started. New test code, synthetic examples, and game captures remain in workspace `local/` and are excluded from GitHub. Tests and examples added in the previous phase are removed from the current branch without rewriting history. Work pauses when Windows capture or manual mobile acceptance is needed; provide instructions and a result directory, then continue from the returned evidence.
+
 ## 1. Fixed Decisions and Delivery Boundaries
 
 | Item | Decision | Status |
@@ -63,6 +65,7 @@ Offline processes have neither permissions nor handles to control the game. Reca
     src/physics/                       Planned Rapier world and collision
     src/render/                        Planned render loop, quality, and resource disposal
   data/                               Raw images, batches, tasks, masters, release artifacts, excluded from Git
+  local/                              Local qa, samples, validation, deliverables, excluded from Git
   .work/                              Session caches and validation temporary files, excluded from Git
   .venv/                              Isolated contract-validation environment for this session, excluded from Git
 ```
@@ -308,7 +311,7 @@ C00/W00 provide the executable foundation in this session. M0–M5 describe subs
 
 ## 12. Git, Traceability, and Initial Risks
 
-The account is fixed as RabbitStudioChino. The capture fork retains a public upstream relationship, and the independent web repository starts private. The initial push includes only code, design, and tiny self-authored samples, excluding game frames, model masters, and log data. Retain upstream AGPL and copyright notices. The web license will be decided from the actual code sources.
+The account is fixed as RabbitStudioChino. The capture fork retains a public upstream relationship, and the independent web repository starts private. Push only product code, design, formal schemas, and dependency locks. Exclude new test code, all examples, game frames, model masters, and log data. Preserve existing upstream history and tests without destructive cleanup. Retain upstream AGPL and copyright notices. The web license will be decided from the actual code sources.
 
 Chinese commit messages consistently follow `类型(范围): 摘要`, for example `docs(架构): 明确双仓职责与平台边界`, `feat(采集协议): 校验不可变批次与帧关联`, and `feat(世界协议): 校验发布资产与碰撞引用`. Commit and push each complete feature separately, excluding failed intermediate artifacts. Commit identity uses RabbitStudioChino's GitHub noreply address configured locally for each repository, preserving other projects' account settings.
 

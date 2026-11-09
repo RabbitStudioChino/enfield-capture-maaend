@@ -34,6 +34,8 @@ Actively under development 🎉…
 
 RabbitStudioChino's capture and offline production project preserves MaaEnd history and licensing at a pinned source revision. Current deliverables are the [detailed architecture](docs/capture/architecture.en.md) and [CaptureBundle contract validation](contracts/capture/README.en.md). The first release is planned to connect to a running game on Windows and capture through a CLI and one-click scripts; the capture runner and real reconstruction have not been implemented or accepted. The independent web repository is [endfield-world-web](https://github.com/RabbitStudioChino/endfield-world-web).
 
+Project tests and samples stay in the parent workspace at `local/qa/capture/` and `local/samples/capture/` and are never committed or uploaded to GitHub. A standalone clone contains code, formal schemas, and documentation. The contract guide describes checks in the local test workspace. Inherited MaaEnd tests and model submodules remain intact. When Windows hardware validation is required, pause dependent work and provide instructions and the workspace return directory `local/validation/windows-capture/<run-id>/`.
+
 The upstream MaaEnd introduction and download instructions remain below. Its existing automation capabilities do not mean this fork's capture and production features are complete.
 
 ## 📖 Notes

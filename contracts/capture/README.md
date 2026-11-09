@@ -1,6 +1,6 @@
 # CaptureBundle 1.0
 
-本目录是采集输入协议的权威来源。当前提供 JSON Schema 2020-12、只读离线校验器和自有合成样例。协议供后续采集器与重建消费者接入，实机采集与重建尚待实现和验收。
+本目录是采集输入协议的权威来源。仓库提供 JSON Schema 2020-12 和只读离线校验器；测试与自有合成样例仅保留在父工作区 `local/`，不提交或上传 GitHub。协议供后续采集器与重建消费者接入，实机采集与重建尚待实现和验收。
 
 ## 文件与版本
 
@@ -62,12 +62,18 @@ images/raw/<frame_id>.png
 mkdir -p .cache/tmp
 python3 -m venv .cache/capture-venv
 TMPDIR="$PWD/.cache/tmp" .cache/capture-venv/bin/python -m pip install --cache-dir .cache/pip -r tools/capture/requirements.lock
-PYTHONDONTWRITEBYTECODE=1 .cache/capture-venv/bin/python -m tools.capture.validate contracts/capture/fixtures/synthetic-minimal
-PYTHONDONTWRITEBYTECODE=1 .cache/capture-venv/bin/python -m unittest discover -s tools/capture/tests -v
+PYTHONDONTWRITEBYTECODE=1 .cache/capture-venv/bin/python -m tools.capture.validate path/to/frozen-bundle
 ```
 
-命令校验通过返回 `0`，数据或文件错误返回 `1`，参数错误返回 `2`。Python 调用入口为 `tools.capture.validate.validate_bundle(directory)`，成功返回清单与帧、批次、文件数，失败抛出 `BundleValidationError` 或文件系统 `OSError`。测试临时副本固定在仓库 `.cache/capture-tests/` 内，测试结束自动清理。
+将 `path/to/frozen-bundle` 替换为自己的冻结包目录。独立 clone 不提供本项目测试和样本。已有双仓本地工作区可在本仓库根目录执行以下命令，使用父工作区已有的隔离环境和本地验证文件。
 
-[`fixtures/synthetic-minimal/`](./fixtures/synthetic-minimal/) 包含一个 16×12 RGB PNG 和两条合成帧记录。PNG 由 Python 标准库 `struct`、`zlib` 生成，每行使用 PNG filter `0`，像素为 `(x * 16, y * 20, (x + y) * 9)`，其中 `x=0..15`、`y=0..11`。单元测试验证 PNG 分块 CRC、尺寸及解压像素。第一帧模拟截图有效而导航缺失，第二帧模拟截图失败。所有身份、地图和时间均为合成数据，未运行游戏控制、实机导航或视觉重建。
+```bash
+PYTHONDONTWRITEBYTECODE=1 ../.venv/bin/python -m tools.capture.validate ../local/samples/capture/synthetic-minimal
+PYTHONDONTWRITEBYTECODE=1 ../.venv/bin/python -m unittest discover -s ../local/qa/capture -v
+```
+
+命令校验通过返回 `0`，数据或文件错误返回 `1`，参数错误返回 `2`。Python 调用入口为 `tools.capture.validate.validate_bundle(directory)`，成功返回清单与帧、批次、文件数，失败抛出 `BundleValidationError` 或文件系统 `OSError`。测试临时副本固定在父工作区 `local/.cache/capture-tests/` 内，测试结束自动清理。
+
+父工作区 `local/samples/capture/synthetic-minimal/` 包含一个 16×12 RGB PNG 和两条合成帧记录。PNG 由 Python 标准库 `struct`、`zlib` 生成，每行使用 PNG filter `0`，像素为 `(x * 16, y * 20, (x + y) * 9)`，其中 `x=0..15`、`y=0..11`。本地单元测试验证 PNG 分块 CRC、尺寸及解压像素。第一帧模拟截图有效而导航缺失，第二帧模拟截图失败。所有身份、地图和时间均为合成数据，未运行游戏控制、实机导航或视觉重建。
 
 后续阶段将定义 `ReconstructionBundle`、`PreviewSnapshot`、`RescanRequest`、相机求解与可执行补采协议，并接入真实同帧采集、事件日志、标定与导出验收。

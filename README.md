@@ -34,6 +34,8 @@ Powered by [MaaFramework](https://github.com/MaaXYZ/MaaFramework) & [MXU](https:
 
 RabbitStudioChino 的采集与离线制作项目，基于 MaaEnd 固定源码保留上游历史和许可。当前交付[详细架构](docs/capture/architecture.md)与 [CaptureBundle 契约校验](contracts/capture/README.md)。首版计划为 Windows 连接运行中的游戏，通过 CLI 和一键脚本采集；采集运行器及真实重建尚未实现和验收。独立网页仓库为 [endfield-world-web](https://github.com/RabbitStudioChino/endfield-world-web)。
 
+本项目测试与样本仅保留在父工作区的 `local/qa/capture/` 和 `local/samples/capture/`，不提交或上传 GitHub。独立 clone 只包含代码、正式 schema 和文档；本地测试工作区的运行方式见契约说明。MaaEnd 继承的测试与模型子模块保持原状。需要 Windows 实机验证时暂停依赖该结果的工作，先提供操作步骤和工作区 `local/validation/windows-capture/<run-id>/` 结果返还目录。
+
 以下保留上游 MaaEnd 介绍与下载说明，其已有自动化能力不代表本 Fork 的采集制作功能已完成。
 
 ## 📖 使用须知
