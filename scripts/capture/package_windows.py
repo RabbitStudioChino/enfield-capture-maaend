@@ -14,6 +14,15 @@ PYTHON_SHA256 = "0eb85c2dfccccf1b17352de4c397f69194035b7d37149eacc16f1147d93de3b
 PYTHON_URL = "https://api.nuget.org/v3-flatcontainer/python/3.12.10/python.3.12.10.nupkg"
 FORBIDDEN = {".git", "__pycache__", "tests", "test", "samples", "fixtures", "debug", "node_modules"}
 MAP_MODULES = ("__init__.py", "model.py", "runtime.py", "agent_session.py", "navmesh_backend.py", "json_import.py")
+VC_RUNTIME_DLLS = {
+    "concrt140.dll",
+    "msvcp140.dll",
+    "msvcp140_1.dll",
+    "msvcp140_2.dll",
+    "msvcp140_atomic_wait.dll",
+    "vcruntime140.dll",
+    "vcruntime140_1.dll",
+}
 
 
 def real_path(path):
@@ -69,6 +78,16 @@ def package(args):
     ):
         if not real_path(install / relative).is_file():
             raise ValueError(f"Missing production runtime: {relative}")
+    vc_notice = real_path(install / "licenses/VisualCpp")
+    vc_runtime = json.loads((vc_notice / "provenance.json").read_text(encoding="utf-8-sig"))
+    vc_names = {entry["name"].lower() for entry in vc_runtime["files"]}
+    if not VC_RUNTIME_DLLS.issubset(vc_names):
+        raise ValueError("The installed Visual C++ Redist does not cover the production PE import dependencies")
+    for entry in vc_runtime["files"]:
+        for directory in ("agent", "maafw"):
+            path = real_path(install / directory / entry["name"])
+            if sha256(path) != entry["sha256"]:
+                raise ValueError(f"Application-local Visual C++ runtime differs from its installed source: {path}")
     commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=SOURCE_ROOT, text=True).strip()
     submodules = {
         uri: subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=SOURCE_ROOT / uri, text=True).strip()
@@ -132,6 +151,7 @@ def package(args):
         tree(install / name, "install/" + name)
     tree(install / "agent", "install/agent")
     tree(install / "maafw", "install/maafw")
+    tree(vc_notice, "licenses/VisualCpp")
     for uri, path in list(files.items()):
         if uri.startswith(("assets/resource/", "assets/data/")):
             native_uri = "install/" + uri.removeprefix("assets/")
@@ -157,6 +177,8 @@ def package(args):
             "MaaEnd and MaaUtils use their included licenses. Model resources retain their included license.\n"
             "MaaFramework v5.14.3 uses the included LGPL license. MaaDeps v3.0.0 third-party copyright files are included.\n"
             "WebView2 SDK 1.0.2210.55 is sourced from Microsoft's official NuGet package and retains its notices.\n"
+            "Microsoft Visual C++ release x64 DLLs are bundled app-local in install/agent and install/maafw.\n"
+            "Their installed Visual Studio source, exact file versions, hashes and official redistribution/license sources are retained in licenses/VisualCpp.\n"
             f"Official PSF Python 3.12.10 x64 archive {PYTHON_URL}\nArchive SHA-256 {PYTHON_SHA256}\n"
             "Python license is included verbatim and also remains in the official archive.\n"
             "Run Start-Region-Capture.cmd and read docs/capture/automatic-capture.md or its English counterpart.\n"
@@ -182,6 +204,7 @@ def package(args):
         "sdk_version": "5.14.3",
         "maadeps_version": "3.0.0",
         "python_version": "3.12.10",
+        "visual_cpp_runtime": vc_runtime,
         "tests_executed": False,
         "device_validation": "not_performed",
         "files": sorted(entries, key=lambda item: item["uri"]),

@@ -103,6 +103,59 @@ jobs:
             Copy-Item -LiteralPath deps/share/MaaAgentBinary -Destination install/maafw -Recurse
           }
 
+      - name: Bundle the installed Visual C++ x64 runtime app-local
+        run: |
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $instances = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -format json
+          if ($LASTEXITCODE -ne 0) { throw 'Visual Studio discovery failed' }
+          $vs = @($instances | ConvertFrom-Json)[0]
+          if (-not $vs.installationPath) { throw 'No production Visual Studio C++ installation found' }
+          $redistRoot = Join-Path $vs.installationPath 'VC/Redist/MSVC'
+          $defaultFile = Join-Path $vs.installationPath 'VC/Auxiliary/Build/Microsoft.VCRedistVersion.default.txt'
+          $defaultVersion = if (Test-Path -LiteralPath $defaultFile) { (Get-Content -LiteralPath $defaultFile -Raw).Trim() } else { $null }
+          $versions = @(Get-ChildItem -LiteralPath $redistRoot -Directory | Where-Object Name -Match '^\d+\.\d+\.\d+(\.\d+)?$' | Sort-Object { [version]$_.Name } -Descending)
+          if ($versions.Count -eq 0) { throw 'No installed release VC Redist version found' }
+          $redist = $versions[0]
+          if ($defaultVersion -and [version]$redist.Name -lt [version]$defaultVersion) { throw 'Installed VC Redist is older than the selected VS default' }
+          $crtDirs = @(Get-ChildItem -LiteralPath (Join-Path $redist.FullName 'x64') -Directory | Where-Object Name -Match '^Microsoft\.VC\d+\.CRT$')
+          if ($crtDirs.Count -ne 1) { throw 'Expected one x64 release CRT directory in the selected VC Redist' }
+          $crt = $crtDirs[0]
+          $dlls = @(Get-ChildItem -LiteralPath $crt.FullName -File -Filter '*.dll')
+          if ($dlls.Count -eq 0) { throw 'The selected VC CRT directory contains no DLLs' }
+          foreach ($dll in $dlls) {
+            if ($dll.Name -eq 'ucrtbase.dll' -or $dll.Name -like 'api-ms-win-crt-*') { throw 'System UCRT files must not enter the application-local VC runtime bundle' }
+            foreach ($destination in @('install/agent', 'install/maafw')) { Copy-Item -LiteralPath $dll.FullName -Destination $destination }
+          }
+          $noticeDir = Join-Path $env:GITHUB_WORKSPACE 'install/licenses/VisualCpp'
+          New-Item -ItemType Directory -Force -Path $noticeDir | Out-Null
+          $vsYear = if ([version]$vs.installationVersion -ge [version]'18.0') { '2026' } else { '2022' }
+          $redistributionUrl = "https://learn.microsoft.com/en-us/visualstudio/releases/$vsYear/redistribution"
+          $licenseUrl = 'https://visualstudio.microsoft.com/license-terms/'
+          $provenance = [ordered]@{
+            schema_version = 'capture.vc-runtime/1.0'
+            visual_studio = [ordered]@{ installation_path=$vs.installationPath; installation_version=$vs.installationVersion; product_id=$vs.productId }
+            default_redist_version = $defaultVersion
+            redist_version = $redist.Name
+            source_directory = $crt.FullName
+            redistribution_source_url = $redistributionUrl
+            license_terms_source_url = $licenseUrl
+            files = @($dlls | ForEach-Object { [ordered]@{name=$_.Name; file_version=$_.VersionInfo.FileVersion; sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()} })
+          }
+          $provenance | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8 (Join-Path $noticeDir 'provenance.json')
+          @(
+            'Microsoft Visual C++ x64 runtime files, copyright Microsoft Corporation.'
+            'These release DLLs are copied unmodified from the licensed Visual Studio installation on the Windows build runner.'
+            'The applicable Microsoft Visual Studio license terms govern use and redistribution. The official Distributable List covers release files under VC/Redist and excludes debug_nonredist.'
+            "Official redistribution permission source $redistributionUrl"
+            "Official Microsoft license terms source $licenseUrl"
+            "Actual installed runtime source $($crt.FullName)"
+            'The exact VS version, CRT version, source directory, DLL file versions and SHA-256 values are recorded in provenance.json.'
+          ) | Set-Content -Encoding utf8 (Join-Path $noticeDir 'NOTICE.txt')
+          $installedLicenses = Join-Path $vs.installationPath 'Licenses/1033'
+          if (Test-Path -LiteralPath $installedLicenses) {
+            Get-ChildItem -LiteralPath $installedLicenses -File | Where-Object { $_.Name -match '(?i)(license|redist)' -and $_.Extension -in @('.txt', '.rtf', '.html', '.htm') } | Copy-Item -Destination $noticeDir
+          }
+
       - name: Package the Windows capture delivery
         run: |
           python -B scripts/capture/package_windows.py --workspace "$env:GITHUB_WORKSPACE" --install install --sdk deps --python-package local/downloads/python.3.12.10.nupkg --output local/deliverables/enfield-region-auto-capture-windows.zip
