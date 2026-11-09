@@ -32,7 +32,7 @@ Powered by [MaaFramework](https://github.com/MaaXYZ/MaaFramework) & [MXU](https:
 
 ## 本 Fork：enfield-capture-maaend
 
-RabbitStudioChino 的采集与离线制作项目，基于 MaaEnd 固定源码保留上游历史和许可。当前提供[详细架构](docs/capture/architecture.md)、[CaptureBundle 契约校验](contracts/capture/README.md)与 [Windows 截图诊断](docs/capture/windows-validation.md)。`doctor` / `probe` 连接运行中的游戏并截图，输出 `capture.probe/1.0` 诊断报告；观察点由用户手动调整，导航与相机位姿保留未知。游戏键鼠方法固定 `Null`，沿用 MaaEnd 的 `ScreenDC` 后端，SDK 可能恢复焦点或移动窗口。自动计划采集、正式 CaptureBundle 导出和真实重建仍待实现；Windows 截图效果等待用户实机验证。独立网页仓库为 [endfield-world-web](https://github.com/RabbitStudioChino/endfield-world-web)。
+RabbitStudioChino 的采集与离线制作项目，基于 MaaEnd 固定源码保留上游历史和许可。当前提供[详细架构](docs/capture/architecture.md)、[CaptureBundle 契约校验](contracts/capture/README.md)、[Windows 截图诊断](docs/capture/windows-validation.md)与[离线图像输入准备](docs/capture/offline-preparation.md)。`doctor` / `probe` 连接运行中的游戏并截图，输出 `capture.probe/1.0` 诊断报告；观察点由用户手动调整，导航与相机位姿保留未知。游戏键鼠方法固定 `Null`，沿用 MaaEnd 的 `ScreenDC` 后端，SDK 可能恢复焦点或移动窗口。自动计划采集、正式 CaptureBundle 导出和真实重建仍待实现；Windows 截图效果等待用户实机验证。独立网页仓库为 [endfield-world-web](https://github.com/RabbitStudioChino/endfield-world-web)。
 
 本项目测试与样本仅保留在父工作区的 `local/qa/capture/` 和 `local/samples/capture/`，不提交或上传 GitHub。独立 clone 只包含代码、正式 schema 和文档；本地测试工作区的运行方式见契约说明。MaaEnd 继承的测试与模型子模块保持原状。需要 Windows 实机验证时暂停依赖该结果的工作，先提供操作步骤和工作区 `local/validation/windows-capture/<run-id>/` 结果返还目录。
 
