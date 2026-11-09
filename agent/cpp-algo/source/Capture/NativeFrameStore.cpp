@@ -10,10 +10,10 @@
 #include <utility>
 
 #ifdef _WIN32
+#include <MaaUtils/SafeWindows.hpp>
 #include <io.h>
 #include <share.h>
 #include <sys/stat.h>
-#include <windows.h>
 #else
 #include <unistd.h>
 #endif
