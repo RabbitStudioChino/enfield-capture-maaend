@@ -69,7 +69,7 @@ PYTHONDONTWRITEBYTECODE=1 .cache/capture-venv/bin/python -m tools.capture.valida
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 ../.venv/bin/python -m tools.capture.validate ../local/samples/capture/synthetic-minimal
-PYTHONDONTWRITEBYTECODE=1 ../.venv/bin/python -m unittest discover -s ../local/qa/capture -v
+PYTHONDONTWRITEBYTECODE=1 ../.venv/bin/python -m unittest discover -s ../local/qa/capture -p test_validate.py -v
 ```
 
 命令校验通过返回 `0`，数据或文件错误返回 `1`，参数错误返回 `2`。Python 调用入口为 `tools.capture.validate.validate_bundle(directory)`，成功返回清单与帧、批次、文件数，失败抛出 `BundleValidationError` 或文件系统 `OSError`。测试临时副本固定在父工作区 `local/.cache/capture-tests/` 内，测试结束自动清理。

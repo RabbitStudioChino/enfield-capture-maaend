@@ -69,7 +69,7 @@ Replace `path/to/frozen-bundle` with your frozen bundle directory. A standalone 
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 ../.venv/bin/python -m tools.capture.validate ../local/samples/capture/synthetic-minimal
-PYTHONDONTWRITEBYTECODE=1 ../.venv/bin/python -m unittest discover -s ../local/qa/capture -v
+PYTHONDONTWRITEBYTECODE=1 ../.venv/bin/python -m unittest discover -s ../local/qa/capture -p test_validate.py -v
 ```
 
 The command returns `0` on success, `1` for data or filesystem errors, and `2` for argument errors. The Python entry point is `tools.capture.validate.validate_bundle(directory)`. It returns the manifest and frame, batch, and file counts, or raises `BundleValidationError` or a filesystem `OSError`. Temporary test copies stay under the parent workspace's `local/.cache/capture-tests/` and are cleaned up automatically.
