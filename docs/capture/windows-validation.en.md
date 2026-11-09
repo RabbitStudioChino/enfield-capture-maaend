@@ -44,6 +44,8 @@ local\envs\capture-windows-py312\Scripts\python.exe -m tools.capture probe --wor
 
 Every run uses a new timestamp and random identifier, preserving earlier results. Python bootstrap, dependency installation, and capture reports may occupy separate directories. Python bootstrap directories contain `report.json`, `install.log`, and version-check logs. Dependency installation logs use `logs/install.log`.
 
+The outer PowerShell report uses `capture.probe.bootstrap/1.0`, with `stage=setup_and_capture` covering dependency setup and subsequent capture. The Python dependency report uses `capture.probe.bootstrap/1.1`, with `stage=dependency_setup`. It writes the terminal `installed` status and `finished_utc` after installation succeeds, before starting the probe. The installation report describes that stage alone. The `capture.probe/1.0` report owns the capture outcome. A completed installation report remains `installed` after capture failure or interruption. The previous installation report's `capture_exit_code` field has been removed.
+
 ```text
 local/validation/windows-capture/<run-id>/
   report.json
@@ -55,12 +57,23 @@ local/validation/windows-capture/<run-id>/
 ```
 
 - Open successful PNG frames and confirm complete images, correct colors, the intended game, and dimensions matching the game client-area settings at capture time. The report records SDK raw resolution and `raw_size_enabled`. Returned dimensions must match the SDK raw resolution.
-- Inspect `status`, `connection`, `errors`, `attempted`, `captured`, `failed`, and `worker` in `report.json`. Frame records include relative paths, SHA-256, dimensions, clocks, and independent failure reasons.
+- Inspect `status`, `connection`, `errors`, `attempted`, `captured`, `failed`, and `worker` in the capture `report.json`. Frame records include relative paths, SHA-256, dimensions, clocks, and independent failure reasons. After a window check rejects capture, `window` in the connection or frame record retains that check's snapshot. The rejection text includes the `visible`, `minimized`, and `foreground` booleans. It is `null` when the window has closed or no snapshot was obtained.
 - Changing viewpoints manually should produce different images. Repeated content increments `duplicate_images` and records `duplicate_of_frame_id` in the frame. Static scenes can also produce identical images, so compare this with your actual actions.
 - Separately check game focus loss, minimization, and Ctrl+C. Focus loss and minimization observed at a check should produce rejection or failure records. SDK internals may already have restored focus or adjusted the window, so record the actual behavior as well. After timeout or interruption, `worker.returncode` should be present. Incomplete `.partial` files are excluded from successful frames.
 - Compress the relevant complete run directories under `local\validation\windows-capture` and return them. The Mac destination is `local/validation/windows-capture/` under the workspace root, preserving each `run-id`. Include directories containing failure reports and logs.
 
-The exit code is `0` when all attempts succeed, `1` for partial success or failure, `2` for invalid arguments, and `130` for user interruption. If disk writes fail, the console reports that the report could not be written. Preserve that console error text for diagnosis.
+The probe exit code is `0` when all attempts succeed, `1` for partial success or failure, `2` for invalid arguments, and `130` for user interruption. When PowerShell interrupts the pipeline, the outer `child_exit_code` can be `null`. Inspect both the outer and capture reports. If disk writes fail, the console reports that the report could not be written. Preserve that console error text for diagnosis.
+
+## One Remaining Interruption Check
+
+Reports and file hashes from the normal `doctor` and 12-frame `probe` returned on 2026-11-09 have been checked. They do not need to be repeated for this fix. Use the delivery containing this fix and run `scripts\capture\capture.cmd probe`.
+
+1. Switch back to the game during the countdown and allow successful capture. Briefly switch away, minimize the game, and restore it, keeping each state for about two seconds so this run can record window snapshots.
+2. Before all 12 attempts finish, switch to the console and press Ctrl+C once. Wait for the launcher to exit or show its pause prompt. Preserve the console interruption and exit text.
+3. Inspect the three report directories from this run. The dependency report should use `capture.probe.bootstrap/1.1`, `stage=dependency_setup`, and `status=installed`, with `finished_utc` already present. The outer report should have an interrupted terminal status and `finished_utc`. The capture report should be `interrupted` with `finished_utc`, and `worker.returncode` should be present. The connection or failed-frame `window` and booleans should identify the observed window conditions.
+4. Return all three complete report directories and the console text to workspace `local/validation/windows-capture/<run-id>/`, preserving each `run-id`. The SDK may restore foreground status between checks. Report any state that was not observed as such.
+
+An earlier interrupted run demonstrated probe-report finalization and worker reaping, but the old Python installation report lacked `finished_utc`. This change adjusts the installation report lifecycle. Windows launcher interruption with the fix still awaits the results above.
 
 ## Failure Handling
 
@@ -84,4 +97,4 @@ Window selection follows the `Win32-Front` configuration in `assets/interface.js
 
 Constructor parameters, raw-size settings, job polling, `get(wait=False)`, raw resolution, and BGR data conventions were verified against the 5.14.3 wheel. PNG writing converts BGR to RGB. Internal connection and capture waits are bounded at 10 and five seconds. The parent process bounds complete worker requests at 25 and 12 seconds respectively. [Python bindings](https://github.com/MaaXYZ/MaaFramework/blob/v5.14.3/source/binding/Python/maa/controller.py)
 
-Native render-frame time is unavailable, so `native_render_timestamp` is `null` and `frame_freshness` is `unknown`. API completion times describe host operations. Local checks cover parameters, paths, worker timeout and reaping, failure persistence, and color conversion. Windows game capture, DPI, privileges, and user-operation acceptance still require live results. Automatic navigation, localization, camera solving, and reconstruction belong to later stages.
+Native render-frame time is unavailable, so `native_render_timestamp` is `null` and `frame_freshness` is `unknown`. API completion times describe host operations. Local checks cover parameters, paths, worker timeout and reaping, failure persistence, color conversion, installation-report finalization, and rejected-window snapshots. Actual Windows connection, normal original-size capture, and interruption records have been received. See the [implementation status](implementation-status.en.md) for their scope. Different DPI and privilege combinations, separate evidence of focus-loss and minimization checks, and fixed-launcher interruption finalization still require verification. Automatic navigation, localization, camera solving, and reconstruction belong to later stages.

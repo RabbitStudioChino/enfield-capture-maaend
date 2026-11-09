@@ -79,6 +79,7 @@ class WindowsAdapter:
         self.run = run
         self.controller = None
         self.window = None
+        self.last_window = None
         self.initial_size = None
 
     def initialize(self):
@@ -156,6 +157,7 @@ class WindowsAdapter:
         except Exception as error:
             result["error"] = f"{type(error).__name__}: {error}"
             traceback.print_exc()
+        result["window"] = self.last_window
         return result
 
     def window_info(self, hwnd):
@@ -179,9 +181,11 @@ class WindowsAdapter:
         }
 
     def check_window(self):
+        self.last_window = None
         if not self.user32.IsWindow(self.hwnd):
             raise RuntimeError("Game window was closed")
         info = self.window_info(self.hwnd)
+        self.last_window = info
         if (
             info["class_name"] != "UnityWndClass"
             or "Endfield" not in info["title"]
@@ -189,7 +193,10 @@ class WindowsAdapter:
         ):
             raise RuntimeError("Game window identity changed")
         if not info["visible"] or info["minimized"] or not info["foreground"]:
-            raise RuntimeError("Game window must be visible, restored, and in the foreground")
+            raise RuntimeError(
+                "Game window must be visible, restored, and in the foreground "
+                f"(visible={info['visible']}, minimized={info['minimized']}, foreground={info['foreground']})"
+            )
         if min(info["client_size"]) <= 0:
             raise RuntimeError("Game window has an empty client area")
         return info
@@ -259,6 +266,7 @@ class WindowsAdapter:
                 "source_format": "BGR8",
             }
         except Exception as error:
+            result["window"] = self.last_window
             result["error"] = f"{type(error).__name__}: {error}"
             result["image"]["reason"] = result["error"]
             result["fatal"] = capture_pending or isinstance(error, TimeoutError)

@@ -22,11 +22,19 @@ This workspace uses official COLMAP 4.2.1, OpenMVS 2.4.0, and the installed Blen
 
 Actual Blender GLB / triangle-collision releases have been checked by the web validator and loaded in Chrome for character movement, quality switching, and runtime reports. Chunking, LOD, cancellation, and recovery have local checks. These do not establish acceptance of the real game world or mobile devices.
 
+## Windows Hardware Evidence Received
+
+Actual game reports and screenshots were received from the user on 2026-11-09. A normal `doctor` completed one frame, and a normal `probe` completed 12/12 frames, all recorded at the original 2560×1440 size. Their workers were reaped. SHA-256 checks matched all 29 files listed by the normal `probe` report.
+
+Two subsequent runs rejected window conditions while awaiting connection, captured zero frames, and reaped their workers. A third run attempted 11 captures. Frames 1, 6, and 7 succeeded at 1920×1200, while eight attempts were rejected by window checks. Its capture report is `interrupted`, with `finished_utc` and a worker return code. SHA-256 checks matched all 29 files listed across these three exceptional capture runs. The old logs used a shared focus-loss and minimization rejection message, so they cannot establish that both conditions were separately observed.
+
+The interrupted run's outer PowerShell report finalized, but the old Python dependency report remained `installed` without `finished_utc`. The installation report now covers only the `dependency_setup` stage in `capture.probe.bootstrap/1.1` and writes its terminal state before starting the probe. The outer PowerShell report continues to summarize the whole launcher, and the probe report records capture results. Rejected-window snapshots and state booleans have local regression checks. Windows behavior with the fix still awaits [one interruption check](windows-validation.en.md#one-remaining-interruption-check).
+
 ## Remaining Work Requiring Actual Evidence
 
 | Work | Missing evidence | Next action |
 | --- | --- | --- |
-| Windows connection and input behavior | The user's game window, screenshots, focus loss, minimization, and interruption records | Use the [hardware steps](windows-validation.en.md), then confirm controller behavior from returned results |
+| Fixed Windows launcher interruption and window diagnostics | Updated installation terminal state, finalized outer and capture reports, and live snapshots distinguishing focus loss from minimization | Return [one interruption check](windows-validation.en.md#one-remaining-interruption-check) to verify installation and capture report ownership and observed window state |
 | Native same-frame capture and full task control | C01 behavior, real localization input, and Pipeline recognition templates | Integrate C02–C04 native completion records, bounded writes, input leases, automatic capture, and recovery without blind operations based on unknown screens |
 | Game reconstruction settings and quality | Real multiview data, dynamic occlusion, HUD, usable camera groups, and held-out views | Calibrate filtering, masks, and reconstruction parameters; choose recapture or manual repairs |
 | Automatic recapture and cross-region registration | Actual floor mappings, reachable viewpoints, trustworthy anchors, and errors | Add validated automated decisions to explicit transforms and revision constraints; bounding-box placement does not establish registration |

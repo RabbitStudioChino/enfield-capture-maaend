@@ -33,13 +33,13 @@ def main():
     args = parser.parse_args()
     run = create_run(args.workspace)
     report = {
-        "schema_version": "capture.probe.bootstrap/1.0",
+        "schema_version": "capture.probe.bootstrap/1.1",
+        "stage": "dependency_setup",
         "status": "installing",
         "started_utc": utc_now(),
         "python": sys.version,
         "os": platform.platform(),
         "errors": [],
-        "capture_exit_code": None,
     }
     path = run / "report.json"
     write_json(path, report)
@@ -112,15 +112,7 @@ def main():
                 timeout=300,
             )
         report["status"] = "installed"
-        write_json(path, report)
-        completed = subprocess.run(
-            [str(python), "-m", "tools.capture", args.command, "--workspace", str(workspace)],
-            cwd=SOURCE_ROOT,
-            env=environment,
-        )
-        report["capture_exit_code"] = completed.returncode
-        report["status"] = "complete" if completed.returncode == 0 else "validation_failed"
-        exit_code = completed.returncode
+        exit_code = 0
     except KeyboardInterrupt:
         report["status"] = "interrupted"
         report["errors"].append("Interrupted by user")
@@ -138,7 +130,22 @@ def main():
                 f"{report['status']}: cannot finalize setup report: {error}; errors={report['errors']}", file=sys.stderr
             )
             exit_code = 1
-    return exit_code
+    if exit_code != 0:
+        return exit_code
+    try:
+        completed = subprocess.run(
+            [str(python), "-m", "tools.capture", args.command, "--workspace", str(workspace)],
+            cwd=SOURCE_ROOT,
+            env=environment,
+        )
+        return completed.returncode
+    except KeyboardInterrupt:
+        return 130
+    except Exception as error:
+        print(
+            f"Capture launch failed after dependency setup completed: {type(error).__name__}: {error}", file=sys.stderr
+        )
+        return 1
 
 
 if __name__ == "__main__":

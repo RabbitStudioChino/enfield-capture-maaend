@@ -183,7 +183,7 @@ function Invoke-CaptureBootstrap {
         }
         Assert-RuntimeTree $runtime
         if (-not (Test-PythonRuntime $python)) { throw 'Project CPython is not a working 3.12.10 x64 runtime.' }
-        $script:Report.stage = 'dependency_setup'
+        $script:Report.stage = 'setup_and_capture'
         $script:Report.python = $python
         Write-BootstrapReport
         Write-SetupLog 'Project CPython is ready. Starting the existing dependency setup and capture launcher.'

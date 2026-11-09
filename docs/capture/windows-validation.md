@@ -44,6 +44,8 @@ local\envs\capture-windows-py312\Scripts\python.exe -m tools.capture probe --wor
 
 每次运行使用新的时间戳与随机标识目录，保留旧结果。Python 引导报告、依赖安装报告和采集报告可能分别占用一个目录。Python 引导目录中有 `report.json`、`install.log` 与版本检查日志，依赖安装日志为 `logs/install.log`。
 
+PowerShell 外层报告使用 `capture.probe.bootstrap/1.0`，`stage=setup_and_capture` 汇总依赖准备与后续采集。Python 依赖安装报告使用 `capture.probe.bootstrap/1.1`，`stage=dependency_setup`，在安装成功后写入终态 `installed` 与 `finished_utc`，随后才启动探针。安装报告只描述安装阶段，采集终态以 `capture.probe/1.0` 报告为准。采集失败或中断后，已经完成的安装报告保持 `installed`。旧版安装报告中的 `capture_exit_code` 已移除。
+
 ```text
 local/validation/windows-capture/<run-id>/
   report.json
@@ -55,12 +57,23 @@ local/validation/windows-capture/<run-id>/
 ```
 
 - 打开成功帧 PNG，确认画面完整、颜色正常、确实来自目标游戏，宽高符合当时的游戏客户区设置。报告中记录 SDK 原始分辨率和 `raw_size_enabled`，探针要求返回尺寸与 SDK 原始分辨率一致。
-- 查看 `report.json` 的 `status`、`connection`、`errors`、`attempted`、`captured`、`failed` 和 `worker`。截图记录包含相对路径、SHA-256、宽高、时钟与独立失败原因。
+- 查看采集 `report.json` 的 `status`、`connection`、`errors`、`attempted`、`captured`、`failed` 和 `worker`。截图记录包含相对路径、SHA-256、宽高、时钟与独立失败原因。窗口检查拒绝时，连接或帧记录的 `window` 保留本次检查快照，拒绝文本附 `visible`、`minimized`、`foreground` 布尔值。窗口已经关闭或未取得快照时为 `null`。
 - 手动改变视角后应看到不同画面。重复内容会计入 `duplicate_images`，帧内记录 `duplicate_of_frame_id`。静止场景也可能产生相同图片，需结合实际操作判断。
 - 分别检查游戏失焦、最小化及 Ctrl+C 的情况。在检查时观察到失焦和最小化应产生拒绝或失败记录，SDK 内部仍可能先恢复前台或调整窗口，需一并记录实际现象。超时与中断后 `worker.returncode` 应存在。未完整写完的 `.partial` 文件排除在成功帧之外。
 - 把本次 `local\validation\windows-capture` 下相关完整运行目录压缩返回。Mac 接收位置为工作区根目录的 `local/validation/windows-capture/`，保留 `run-id`。包含失败报告与日志的目录同样需要返回。
 
-正常全部成功退出码为 `0`，部分成功或失败为 `1`，参数错误为 `2`，用户中断为 `130`。磁盘不可写时控制台会显示报告写入失败，保留控制台错误文本供排查。
+探针全部成功退出码为 `0`，部分成功或失败为 `1`，参数错误为 `2`，用户中断为 `130`。PowerShell 中断流水线时，外层 `child_exit_code` 可能为 `null`，应同时检查外层报告与采集报告。磁盘不可写时控制台会显示报告写入失败，保留控制台错误文本供排查。
+
+## 当前只需补测的一轮中断
+
+2026-11-09 返回的正常 `doctor` 与 12 张 `probe` 截图已核对报告及文件哈希，本次无需重复。先使用包含本次修复的交付目录，运行 `scripts\capture\capture.cmd probe`。
+
+1. 倒计时内切回游戏，让探针成功截图。随后短暂切出游戏、将游戏最小化并恢复，每种状态保留约两秒，以便本轮记录窗口快照。
+2. 在 12 次采集结束前切回控制台，按一次 Ctrl+C，等待入口退出或显示暂停提示。保留控制台中断及退出文字。
+3. 检查本轮三个报告目录。依赖安装报告应为 `capture.probe.bootstrap/1.1`、`stage=dependency_setup`、`status=installed` 且已有 `finished_utc`。外层报告应有中断终态与 `finished_utc`。采集报告应为 `interrupted` 且有 `finished_utc`，`worker.returncode` 应存在。连接或失败帧的 `window` 与布尔值应能说明实际观察到的窗口条件。
+4. 将本轮三个完整报告目录和控制台文字一起返回工作区 `local/validation/windows-capture/<run-id>/`，保留各自 `run-id`。SDK 可能在检查间恢复窗口前台，未记录到某个状态时照实说明。
+
+此前一次中断已证明探针报告能够收尾并回收工作进程，但旧版 Python 安装报告缺少 `finished_utc`。本次调整安装报告的生命周期，修复后的 Windows 入口中断收尾仍等待上述结果。
 
 ## 失败处理
 
@@ -84,4 +97,4 @@ Python 使用官方 NuGet `python/3.12.10` x64 包，缓存路径为 `local/cach
 
 已核验 5.14.3 wheel 中的构造参数、原尺寸开关、作业状态轮询、`get(wait=False)`、原始分辨率和 BGR 数据约定。PNG 写入前转换为 RGB。连接内部等待上限 10 秒、截图 5 秒，主进程分别以 25 秒、12 秒限制整个工作进程请求。[Python 绑定](https://github.com/MaaXYZ/MaaFramework/blob/v5.14.3/source/binding/Python/maa/controller.py)
 
-原生渲染帧时间不可获取，因此 `native_render_timestamp` 为 `null`，`frame_freshness` 为 `unknown`。API 完成时间用于主机操作记录。当前本地验证覆盖参数、路径、超时回收、失败持久化与颜色转换，Windows 游戏截图、DPI、权限及用户操作验收仍待实机结果。自动跑图、定位、相机求解与重建属于后续阶段。
+原生渲染帧时间不可获取，因此 `native_render_timestamp` 为 `null`，`frame_freshness` 为 `unknown`。API 完成时间用于主机操作记录。本地验证覆盖参数、路径、超时回收、失败持久化、颜色转换、安装报告收尾及窗口失败快照。已收到真实 Windows 游戏连接、正常原尺寸截图和中断记录，详细范围见[实现状态](implementation-status.md)。不同 DPI / 权限组合、失焦与最小化分别命中的证据，以及修复后的入口中断收尾仍待核验。自动跑图、定位、相机求解与重建属于后续阶段。
