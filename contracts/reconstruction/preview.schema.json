@@ -1,0 +1,97 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://schemas.endfield.local/reconstruction/1.0/preview.schema.json",
+    "type": "object",
+    "required": [
+        "schema_version",
+        "preview_revision",
+        "source_revision",
+        "region_id",
+        "world_frame_id",
+        "source_bundle_sha256",
+        "status",
+        "camera_file",
+        "geometry_file",
+        "diagnostics_file",
+        "coordinate_system",
+        "input_batches"
+    ],
+    "properties": {
+        "schema_version": {
+            "const": "reconstruction.preview/1.0"
+        },
+        "preview_revision": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+        },
+        "source_revision": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+        },
+        "region_id": {
+            "type": "string",
+            "minLength": 1
+        },
+        "world_frame_id": {
+            "anyOf": [
+                {
+                    "type": "string",
+                    "minLength": 1
+                },
+                {
+                    "type": "null"
+                }
+            ]
+        },
+        "source_bundle_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+        },
+        "status": {
+            "const": "needs_review"
+        },
+        "camera_file": {
+            "const": "cameras.json"
+        },
+        "geometry_file": {
+            "const": "sparse.ply"
+        },
+        "diagnostics_file": {
+            "const": "quality.json"
+        },
+        "coordinate_system": {
+            "enum": [
+                "sfm",
+                "world"
+            ]
+        },
+        "input_batches": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+                "type": "object",
+                "required": [
+                    "source_id",
+                    "batch_id",
+                    "sha256"
+                ],
+                "properties": {
+                    "source_id": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "batch_id": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                    }
+                },
+                "additionalProperties": false
+            }
+        }
+    },
+    "additionalProperties": false
+}

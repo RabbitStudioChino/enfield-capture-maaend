@@ -1,0 +1,232 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://schemas.endfield.local/reconstruction/1.0/bundle.schema.json",
+    "type": "object",
+    "required": [
+        "schema_version",
+        "revision",
+        "parent_revision",
+        "region_id",
+        "world_frame_id",
+        "coordinate_system",
+        "scale_status",
+        "transform_world_from_sfm",
+        "camera_file",
+        "mesh_file",
+        "quality_report",
+        "source",
+        "build",
+        "status",
+        "files"
+    ],
+    "properties": {
+        "schema_version": {
+            "const": "reconstruction.bundle/1.0"
+        },
+        "revision": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+        },
+        "parent_revision": {
+            "anyOf": [
+                {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                },
+                {
+                    "type": "null"
+                }
+            ]
+        },
+        "region_id": {
+            "type": "string",
+            "minLength": 1
+        },
+        "world_frame_id": {
+            "anyOf": [
+                {
+                    "type": "string",
+                    "minLength": 1
+                },
+                {
+                    "type": "null"
+                }
+            ]
+        },
+        "coordinate_system": {
+            "const": "sfm"
+        },
+        "scale_status": {
+            "enum": [
+                "arbitrary",
+                "estimated",
+                "verified"
+            ]
+        },
+        "transform_world_from_sfm": {
+            "anyOf": [
+                {
+                    "type": "object",
+                    "required": [
+                        "s",
+                        "R",
+                        "t",
+                        "coordinate_revision",
+                        "scale_evidence"
+                    ],
+                    "properties": {
+                        "s": {
+                            "type": "number",
+                            "exclusiveMinimum": 0
+                        },
+                        "R": {
+                            "type": "array",
+                            "items": {
+                                "type": "array",
+                                "items": {
+                                    "type": "number"
+                                },
+                                "minItems": 3,
+                                "maxItems": 3
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                        },
+                        "t": {
+                            "type": "array",
+                            "items": {
+                                "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                        },
+                        "coordinate_revision": {
+                            "type": "string",
+                            "minLength": 1
+                        },
+                        "scale_evidence": {
+                            "type": "string",
+                            "minLength": 1
+                        }
+                    },
+                    "additionalProperties": false
+                },
+                {
+                    "type": "null"
+                }
+            ]
+        },
+        "camera_file": {
+            "const": "cameras.json"
+        },
+        "mesh_file": {
+            "const": "assets/model.obj"
+        },
+        "quality_report": {
+            "const": "quality.json"
+        },
+        "source": {
+            "type": "object",
+            "required": [
+                "preparation_sha256",
+                "input_batches",
+                "source_bundles"
+            ],
+            "properties": {
+                "preparation_sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                },
+                "input_batches": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object",
+                        "required": [
+                            "source_id",
+                            "batch_id",
+                            "sha256"
+                        ],
+                        "properties": {
+                            "source_id": {
+                                "type": "string",
+                                "pattern": "^[0-9a-f]{64}$"
+                            },
+                            "batch_id": {
+                                "type": "string",
+                                "minLength": 1
+                            },
+                            "sha256": {
+                                "type": "string",
+                                "pattern": "^[0-9a-f]{64}$"
+                            }
+                        },
+                        "additionalProperties": false
+                    }
+                },
+                "source_bundles": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object"
+                    }
+                }
+            },
+            "additionalProperties": false
+        },
+        "build": {
+            "type": "object",
+            "required": [
+                "key",
+                "toolchain_sha256",
+                "config_sha256"
+            ],
+            "properties": {
+                "key": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                },
+                "toolchain_sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                },
+                "config_sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                }
+            },
+            "additionalProperties": false
+        },
+        "status": {
+            "const": "needs_review"
+        },
+        "files": {
+            "type": "array",
+            "minItems": 4,
+            "items": {
+                "type": "object",
+                "required": [
+                    "uri",
+                    "sha256",
+                    "bytes"
+                ],
+                "properties": {
+                    "uri": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "bytes": {
+                        "type": "integer",
+                        "minimum": 0
+                    }
+                },
+                "additionalProperties": false
+            }
+        }
+    },
+    "additionalProperties": false
+}

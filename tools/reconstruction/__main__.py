@@ -1,12 +1,13 @@
-"""Prepare or verify portable inputs from frozen CaptureBundles."""
+"""Prepare portable inputs and run a checkpointed offline reconstruction."""
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
-from tools.capture.validate import BundleValidationError
-
+from .pipeline import cancel, feedback, plan, run, status, verify_bundle
 from .prepare import prepare, verify
+from .toolchain import doctor
 
 
 def report_failure(label, error):
@@ -24,20 +25,66 @@ def main(argv=None):
         command.add_argument("--job", required=True, help="new portable job ID: letters, digits, hyphens, underscores")
         if name == "prepare":
             command.add_argument("--bundle", type=Path, action="append", required=True)
+    command = commands.add_parser("doctor")
+    command.add_argument("--workspace", type=Path, required=True)
+    command.add_argument("--output", type=Path, required=True)
+    command.add_argument("--colmap", type=Path)
+    command.add_argument("--openmvs-dir", type=Path)
+    command = commands.add_parser("plan")
+    command.add_argument("--workspace", type=Path, required=True)
+    command.add_argument("--job", required=True)
+    command.add_argument("--run", required=True)
+    command.add_argument("--config", type=Path, required=True)
+    command.add_argument("--toolchain", type=Path, required=True)
+    for name in ("run", "resume", "status", "cancel", "feedback"):
+        command = commands.add_parser(name)
+        command.add_argument("--workspace", type=Path, required=True)
+        command.add_argument("--run", required=True)
+        if name == "feedback":
+            command.add_argument("--request", required=True)
+    command = commands.add_parser("verify-bundle")
+    command.add_argument("--bundle", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
-        result = (
-            prepare(args.workspace, args.bundle, args.job)
-            if args.command == "prepare"
-            else verify(args.workspace, args.job)
-        )
+        if args.command == "prepare":
+            result = prepare(args.workspace, args.bundle, args.job)
+        elif args.command == "verify":
+            result = verify(args.workspace, args.job)
+        elif args.command == "doctor":
+            result = doctor(args.workspace, args.output, args.colmap, args.openmvs_dir)
+        elif args.command == "plan":
+            result = plan(args.workspace, args.job, args.run, args.config, args.toolchain)
+        elif args.command in ("run", "resume"):
+            result = run(args.workspace, args.run, resume=args.command == "resume")
+        elif args.command == "status":
+            result = status(args.workspace, args.run)
+        elif args.command == "cancel":
+            result = cancel(args.workspace, args.run)
+        elif args.command == "feedback":
+            result = feedback(args.workspace, args.run, args.request)
+        else:
+            result = verify_bundle(args.bundle)
     except KeyboardInterrupt as error:
         report_failure("CANCELLED", error)
         return 130
-    except (BundleValidationError, OSError) as error:
+    except (ValueError, OSError, KeyError, TypeError, StopIteration) as error:
         report_failure("INVALID", error)
         return 1
-    print(f"PREPARED INPUTS {result['image_count']} images; reconstruction=not_run; quality=not_assessed")
+    if args.command in ("prepare", "verify"):
+        print(f"PREPARED INPUTS {result['image_count']} images; reconstruction=not_run; quality=not_assessed")
+    elif args.command == "doctor":
+        print(
+            json.dumps(
+                {"ready": result["ready"], "tools": {name: tool["status"] for name, tool in result["tools"].items()}}
+            )
+        )
+        return 0 if result["ready"] else 1
+    elif args.command == "plan":
+        print(json.dumps({key: result[key] for key in ("run_id", "build_key", "stages", "blockers")}))
+    elif args.command == "verify-bundle":
+        print(json.dumps({key: result[key] for key in ("revision", "status", "scale_status")}))
+    else:
+        print(json.dumps(result, ensure_ascii=False))
     return 0
 
 
