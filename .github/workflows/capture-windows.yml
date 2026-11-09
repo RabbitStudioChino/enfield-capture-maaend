@@ -1,0 +1,118 @@
+name: Build Windows capture package
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  capture-windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: false
+          lfs: false
+          persist-credentials: false
+
+      - name: Prepare workspace-owned caches
+        run: |
+          $root = $env:GITHUB_WORKSPACE
+          foreach ($relative in @('local/tmp', 'local/cache/pip', 'local/cache/go-build', 'local/cache/go-mod', 'local/downloads', 'local/tools', 'local/deliverables')) {
+            New-Item -ItemType Directory -Force -Path (Join-Path $root $relative) | Out-Null
+          }
+          foreach ($name in @('TEMP', 'TMP', 'TMPDIR')) { "$name=$root/local/tmp" >> $env:GITHUB_ENV }
+          "PIP_CACHE_DIR=$root/local/cache/pip" >> $env:GITHUB_ENV
+          "GOCACHE=$root/local/cache/go-build" >> $env:GITHUB_ENV
+          "GOMODCACHE=$root/local/cache/go-mod" >> $env:GITHUB_ENV
+          "GOPATH=$root/local/cache/go" >> $env:GITHUB_ENV
+          "RUNNER_TOOL_CACHE=$root/local/tools" >> $env:GITHUB_ENV
+          "PYTHONDONTWRITEBYTECODE=1" >> $env:GITHUB_ENV
+          "PYTHONUTF8=1" >> $env:GITHUB_ENV
+          "GOTOOLCHAIN=local" >> $env:GITHUB_ENV
+
+      - name: Checkout only production submodules
+        run: |
+          git submodule update --init --depth 1 agent/cpp-algo/MaaUtils assets/resource/model
+          if ($LASTEXITCODE -ne 0) { throw 'Production submodule checkout failed' }
+          git -C assets/resource/model lfs pull
+          if ($LASTEXITCODE -ne 0) { throw 'Model LFS download failed' }
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          architecture: x64
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: agent/go-service/go.mod
+          cache: false
+
+      - name: Download fixed SDK, dependencies and Python runtime
+        run: |
+          function Get-VerifiedArchive([string]$Url, [string]$Name, [string]$Hash) {
+            $path = Join-Path $env:GITHUB_WORKSPACE "local/downloads/$Name"
+            & curl.exe --fail --location --retry 2 --max-time 600 --output $path $Url
+            if ($LASTEXITCODE -ne 0) { throw "Download failed: $Name" }
+            if ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $Hash) {
+              throw "SHA-256 mismatch: $Name"
+            }
+            return $path
+          }
+          $sdk = Get-VerifiedArchive 'https://github.com/MaaXYZ/MaaFramework/releases/download/v5.14.3/MAA-win-x86_64-v5.14.3.zip' 'MAA-win-x86_64-v5.14.3.zip' '4042fde31c583cc5125ec5b12257f8d1929672bb5cb64c9052c34fc8ff4bb8ff'
+          $deps = Get-VerifiedArchive 'https://github.com/MaaXYZ/MaaDeps/releases/download/v3.0.0/MaaDeps-x64-windows.tar.xz' 'MaaDeps-x64-windows.tar.xz' '3638891ca4b9424808598ab917ef73d8811b235ef2dd2246e3af25edd416dfd6'
+          $null = Get-VerifiedArchive 'https://api.nuget.org/v3-flatcontainer/python/3.12.10/python.3.12.10.nupkg' 'python.3.12.10.nupkg' '0eb85c2dfccccf1b17352de4c397f69194035b7d37149eacc16f1147d93de3b8'
+          Expand-Archive -LiteralPath $sdk -DestinationPath deps
+          if (-not (Test-Path deps/bin/MaaFramework.dll) -or -not (Test-Path deps/LICENSE.md)) { throw 'Unexpected MaaFramework archive layout' }
+          $depsRoot = Join-Path $env:GITHUB_WORKSPACE 'agent/cpp-algo/MaaUtils/MaaDeps'
+          New-Item -ItemType Directory -Force -Path $depsRoot | Out-Null
+          tar -xf $deps -C $depsRoot
+          if ($LASTEXITCODE -ne 0) { throw 'MaaDeps extraction failed' }
+          if (-not (Test-Path (Join-Path $depsRoot 'maadeps.cmake')) -or -not (Test-Path (Join-Path $depsRoot 'vcpkg/installed/maa-x64-windows'))) { throw 'Unexpected MaaDeps archive layout' }
+
+      - name: Prepare the pinned build helper dependency and WebView2 SDK
+        run: |
+          'json5==0.17.3 --hash=sha256:2c8b22a893c35cd6a3c5ccbf1dd1c7d02c25dc1b5897fea658f9bf08c2e05f9a' | Set-Content -Encoding utf8 local/build-requirements.txt
+          python -B -m pip install --require-hashes --only-binary=:all: --no-deps -r local/build-requirements.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Build helper dependency setup failed' }
+          python -B -m tools.setup.dep_3rdparty --webview2
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned WebView2 SDK setup failed' }
+
+      - name: Build production C++ and Go agents
+        run: |
+          python -B -m tools.setup.build_and_install --cpp-algo --ci --os win --arch x86_64
+          if ($LASTEXITCODE -ne 0) { throw 'Production agent build failed' }
+          $agentOutput = Join-Path $env:GITHUB_WORKSPACE 'agent/cpp-algo/build/bin/RelWithDebInfo'
+          if (-not (Test-Path (Join-Path $agentOutput 'MaaUtils.dll'))) { throw 'Built MaaUtils.dll was not produced' }
+          Get-ChildItem -LiteralPath $agentOutput -File -Filter '*.dll' | Copy-Item -Destination install/agent
+          $nativeRuntime = Join-Path $env:GITHUB_WORKSPACE 'agent/cpp-algo/MaaUtils/MaaDeps/runtime/maa-x64-windows'
+          Get-ChildItem -LiteralPath $nativeRuntime -File -Filter '*.dll' | Copy-Item -Destination install/agent
+          New-Item -ItemType Directory -Force -Path install/maafw | Out-Null
+          Get-ChildItem -LiteralPath deps/bin -Recurse -File -Filter '*.dll' | ForEach-Object {
+            $relative = [IO.Path]::GetRelativePath((Join-Path $env:GITHUB_WORKSPACE 'deps/bin'), $_.FullName)
+            $destination = Join-Path 'install/maafw' $relative
+            New-Item -ItemType Directory -Force -Path (Split-Path $destination) | Out-Null
+            Copy-Item -LiteralPath $_.FullName -Destination $destination
+          }
+          if (Test-Path -LiteralPath deps/share/MaaAgentBinary) {
+            Copy-Item -LiteralPath deps/share/MaaAgentBinary -Destination install/maafw -Recurse
+          }
+
+      - name: Package the Windows capture delivery
+        run: |
+          python -B scripts/capture/package_windows.py --workspace "$env:GITHUB_WORKSPACE" --install install --sdk deps --python-package local/downloads/python.3.12.10.nupkg --output local/deliverables/enfield-region-auto-capture-windows.zip
+          if ($LASTEXITCODE -ne 0) { throw 'Capture packaging failed' }
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: enfield-region-auto-capture-windows-x64
+          path: |
+            local/deliverables/enfield-region-auto-capture-windows.zip
+            local/deliverables/enfield-region-auto-capture-windows.zip.sha256
+          if-no-files-found: error
+          retention-days: 14
