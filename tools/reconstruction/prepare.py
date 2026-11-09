@@ -526,7 +526,7 @@ def prepare(workspace, bundles, job):
                         }
                     ),
                 )
-        error.args = (f"{error}; uncommitted diagnostics: {staging}",)
+        error.preparation_diagnostics = str(staging)
         raise
     finally:
         lock.rmdir()

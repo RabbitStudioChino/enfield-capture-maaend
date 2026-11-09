@@ -9,6 +9,12 @@ from tools.capture.validate import BundleValidationError
 from .prepare import prepare, verify
 
 
+def report_failure(label, error):
+    diagnostic = getattr(error, "preparation_diagnostics", None)
+    suffix = f"; uncommitted diagnostics: {diagnostic}" if diagnostic else ""
+    print(f"{label}: {error}{suffix}", file=sys.stderr)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -26,10 +32,10 @@ def main(argv=None):
             else verify(args.workspace, args.job)
         )
     except KeyboardInterrupt as error:
-        print(f"CANCELLED: {error}", file=sys.stderr)
+        report_failure("CANCELLED", error)
         return 130
     except (BundleValidationError, OSError) as error:
-        print(f"INVALID: {error}", file=sys.stderr)
+        report_failure("INVALID", error)
         return 1
     print(f"PREPARED INPUTS {result['image_count']} images; reconstruction=not_run; quality=not_assessed")
     return 0
