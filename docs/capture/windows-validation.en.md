@@ -64,16 +64,16 @@ local/validation/windows-capture/<run-id>/
 
 The probe exit code is `0` when all attempts succeed, `1` for partial success or failure, `2` for invalid arguments, and `130` for user interruption. When PowerShell interrupts the pipeline, the outer `child_exit_code` can be `null`. Inspect both the outer and capture reports. If disk writes fail, the console reports that the report could not be written. Preserve that console error text for diagnosis.
 
-## One Remaining Interruption Check
+## Optional Window and Interruption Check
 
-Reports and file hashes from the normal `doctor` and 12-frame `probe` returned on 2026-11-09 have been checked. They do not need to be repeated for this fix. Use the delivery containing this fix and run `scripts\capture\capture.cmd probe`.
+Reports and file hashes from the normal `doctor` and 12-frame `probe` returned on 2026-11-09 have been checked and do not need to be repeated. The user has explicitly deferred abnormal-window checks and requested further development. The steps below remain optional future checks rather than a prerequisite for current work. To resume them, use a delivery containing the fix and run `scripts\capture\capture.cmd probe`.
 
 1. Switch back to the game during the countdown and allow successful capture. Briefly switch away, minimize the game, and restore it, keeping each state for about two seconds so this run can record window snapshots.
 2. Before all 12 attempts finish, switch to the console and press Ctrl+C once. Wait for the launcher to exit or show its pause prompt. Preserve the console interruption and exit text.
 3. Inspect the three report directories from this run. The dependency report should use `capture.probe.bootstrap/1.1`, `stage=dependency_setup`, and `status=installed`, with `finished_utc` already present. The outer report should have an interrupted terminal status and `finished_utc`. The capture report should be `interrupted` with `finished_utc`, and `worker.returncode` should be present. The connection or failed-frame `window` and booleans should identify the observed window conditions.
 4. Return all three complete report directories and the console text to workspace `local/validation/windows-capture/<run-id>/`, preserving each `run-id`. The SDK may restore foreground status between checks. Report any state that was not observed as such.
 
-An earlier interrupted run demonstrated probe-report finalization and worker reaping, but the old Python installation report lacked `finished_utc`. This change adjusts the installation report lifecycle. Windows launcher interruption with the fix still awaits the results above.
+An earlier interrupted run demonstrated probe-report finalization and worker reaping, but the old Python installation report lacked `finished_utc`. The installation report lifecycle has been adjusted. Interruption through the fixed Windows launcher has not been retested; this limit remains recorded rather than marked as passed on hardware.
 
 ## Failure Handling
 

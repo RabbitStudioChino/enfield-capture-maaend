@@ -4,7 +4,7 @@
 
 本文是实施基线，不是运行验收报告。标记含义：**确认**为用户固定要求，**事实**为核对源码所得，**设计**为实施决策，**待验**为需要真实设备或样本的结论。下文里程碑描述完整目标，部分功能的代码完成不代表该里程碑已经验收。
 
-2026-11-09 实施补充：M0/C01 截图探针已交付，等待 Windows 实机结果。独立代码已扩展至离线任务执行与恢复、相机及质量报告、Blender 母版、多档与 LOD 发布、三角碰撞、分区漫游和性能记录，详见[独立编码与实机边界](implementation-status.md)。自有样本实际工具联调与真实游戏验收分开记录；自动采集仍遵守下文依赖。新增测试、样例和游戏采样只保存在工作区 `local/`，不进入 GitHub；既有历史不改写。
+2026-11-09 实施补充：Windows 正常截图已收到 doctor 1/1 与 probe 12/12 实机证据；异常窗口专项按用户要求暂缓。已实现原生同帧完成订阅、有界被动写入，以及人工走位采集的任务控制、检查点和正式冻结导出，两项新功能的 Windows 实机验收尚未完成。独立代码还覆盖离线执行与恢复、相机及质量报告、Blender 母版、多档与 LOD 发布、三角碰撞、分区漫游和性能记录，详见[独立编码与实机边界](implementation-status.md)。自有样本工具联调与真实游戏验收分开记录；自动采集仍遵守下文依赖。新增测试、样例和游戏采样只保存在工作区 `local/`，不进入 GitHub；既有历史不改写。
 
 ## 1. 固定决策与交付边界
 
@@ -19,7 +19,7 @@
 | 首个闭环 | 人工指定小区域观察点，采完后批处理、允许制作修补、手机档单块漫游 | 设计 |
 | 网页技术 | TypeScript + Vite + Three.js + Rapier；首版不加入 React / R3F | 设计：轻量控制界面无需额外渲染生命周期 |
 | 数据组织 | 两个代码仓库 + 工作区内独立数据目录；不建第三个协议仓库、云队列或业务数据库 | 设计 |
-| 首轮代码 | 正式数据契约、合成有效样例、校验 CLI、针对性测试 | 本轮交付 |
+| 当前采集代码 | 同帧完成记录与被动诊断；人工走位任务、检查点和正式导出 | 本地验证完成，新增功能待 Windows 实测 |
 
 运行流畅与较高质量母版仍是目标；不设置云套餐、边缘节点或最终发行包大小约束。游戏内容、真实帧率、重建成功率不得由合成样例推断。
 
@@ -41,29 +41,25 @@ flowchart LR
     S --> V[Three.js / Rapier 浏览器]
 ```
 
-离线进程没有控制游戏的权限或句柄；补采只能返回建议，由采集协调器核对后排程。浏览器中不存在 MaaFramework SDK、采集会话路径或连接游戏的代码。
+上图表示完整自动采集目标。当前人工任务直接通过 MaaFramework 适配层截图，由操作者移动与控制镜头，不运行导航或输入租约；C++ 被动记录使用独立诊断格式，尚未接入正式任务导出。离线进程没有控制游戏的权限或句柄；补采只能返回建议，由采集协调器核对后排程。浏览器中不存在 MaaFramework SDK、采集会话路径或连接游戏的代码。
 
 ```text
 用户工作区/
   docs/                              本次方案和详细设计的阅读入口
   enfield-capture-maaend/             MaaEnd Fork，保留历史与既有目录
     agent/cpp-algo/source/MapNavigator/  既有定位、控制、导航；最小接入改动
-    agent/cpp-algo/source/Capture/      拟新增帧记录、写入与摄影原子动作
+    agent/cpp-algo/source/Capture/      同帧记录、有界写入、被动诊断
     assets/resource/pipeline/Capture/  拟新增识别驱动流程
-    tools/capture/                     协议校验已交付；运行器后续新增
-    tools/reconstruction/              拟新增离线任务执行
-    tools/blender/                     拟新增导入与导出脚本
-    tools/world-export/                拟新增发布打包及固定 schema 引用
+    tools/capture/                     探针、人工任务、恢复、导出与校验
+    tools/reconstruction/              离线任务执行、恢复与质量反馈
+    tools/blender/                     母版导入与导出脚本
+    tools/world_export/                发布打包及固定 schema 引用
     contracts/capture/                 CaptureBundle 协议权威
     docs/capture/                      需求、详细设计、实施任务
   endfield-world-web/                  独立仓库
-    contracts/world/                   WorldRelease 协议权威与合成样例
-    tools/                             发布校验与针对性测试
-    src/app/                           拟新增入口、加载状态和设置
-    src/world/                         拟新增发布校验、资产与区域生命周期
-    src/player/                        拟新增输入、角色、镜头
-    src/physics/                       拟新增 Rapier 世界与碰撞
-    src/render/                        拟新增渲染循环、画质和资源释放
+    contracts/world/                   WorldRelease 协议权威
+    tools/                             发布校验
+    src/                               入口、加载、输入、碰撞、流式与性能记录
   data/                               原图、批次、任务、母版、发布制品，不进 Git
   local/                              本地 qa、samples、validation、deliverables，不进 Git
   .work/                              本次缓存、校验临时文件，不进 Git
@@ -76,7 +72,7 @@ flowchart LR
 
 ## 3. MaaEnd 源码核验与最小接入设计
 
-基线固定 `MaaEnd/MaaEnd@8cccaaec8f59f4b4689b59db84a39d25066ff5ec`。Fork 的 `v2` 保留上游历史，功能开发使用 `feat/architecture-foundation`，审查后快进到产品 `main`。后续合并上游先跑接入回归，不跟随浮动 HEAD。
+基线固定 `MaaEnd/MaaEnd@8cccaaec8f59f4b4689b59db84a39d25066ff5ec`。Fork 的 `v2` 保留上游历史，功能开发使用独立 `feat/*` 分支，审查后快进到产品 `main`。后续合并上游先跑接入回归，不跟随浮动 HEAD。
 
 | 源码位置（均相对采集仓库） | 本轮核实事实 | 设计及影响范围 |
 | --- | --- | --- |
@@ -91,7 +87,7 @@ flowchart LR
 | `agent/cpp-algo/source/main.cpp` | `MaaAgentServerRegisterCustomAction/Recognition` 为注册入口 | 新动作需同步注册、Custom Schema、Pipeline 调用与最小测试 |
 | `agent/cpp-algo/source/CMakeLists.txt` | 递归收集源码 | 新 Capture 源码可被发现，但测试源必须明确排除生产构建 |
 
-完整接入改动清单：上述 provider、导航接入和输入后端；新 Capture 原子动作；`main.cpp` 注册；`tools/schema/custom.action.schema.json`；实际使用该动作的 Pipeline；需要暴露任务时才改 interface、任务与所有语言文案；相关 C++ / Pipeline 回归与 fixture。此次仅新增独立契约目录及校验工具，不修改这些运行通路。
+完整自动接入改动清单：上述 provider、导航接入和输入后端；新 Capture 原子动作；`main.cpp` 注册；`tools/schema/custom.action.schema.json`；实际使用该动作的 Pipeline；需要暴露任务时才改 interface、任务与所有语言文案；相关 C++ / Pipeline 回归与 fixture。当前已修改 provider 和导航内的可选被动记录，保留旧 observer 顺序及返回语义；没有新增摄影动作、注册名或 Pipeline。详见[原生同帧记录](native-capture.md)。
 
 遵循上游“Pipeline 管流程、算法层管难点”：游戏界面识别和状态推进通过 Pipeline，C++ 负责同帧数据、资源生命周期、输入原子操作与轻量门控。Python CLI 管任务生命周期、批次与离线制作，不在 Python 中另写一套盲按键跑图器。没有真实截图与 ROI 的状态识别不编造模板。
 
@@ -110,24 +106,24 @@ flowchart LR
 
 ## 4. Windows CLI、状态机与输入控制权
 
-以下为 M1 要实现的接口，不是本轮可用命令：
+当前人工走位采集接口如下，`capture` 代表 `python -B -m tools.capture`。完整参数、文件结构与实机步骤见[人工采集 CLI](manual-cli.md)。
 
 ```text
 capture doctor --workspace <root>
-capture start --plan <plan.json> --workspace <root>
-capture status --session <id>
-capture pause --session <id>
-capture stop --session <id>
-capture resume --session <id>
-capture logs --session <id> --follow
-capture export --session <id> --batch <id>
-scripts/start-capture.ps1 -Plan <plan.json> -Workspace <root>
-scripts/start-capture.cmd <plan.json> <root>
+capture start --workspace <root> --task <id> --region-label <label> --count 12 --interval 5
+capture status --workspace <root> --task <id>
+capture pause --workspace <root> --task <id>
+capture stop --workspace <root> --task <id>
+capture resume --workspace <root> --task <id>
+capture logs --workspace <root> --task <id> --follow
+capture export --workspace <root> --task <id> [--session <session_id>]
+scripts/capture/capture.ps1 start -Workspace <root> --task <id> --region-label <label>
+scripts/capture/capture.cmd start --task <id> --region-label <label>
 ```
 
-一键脚本只检查环境并调用同一 CLI；不更改系统执行策略，不自动登录或启动游戏，不隐式安装软件。任务进程读工作区内原子提交的控制命令文件，状态命令读取检查点；首版无需监听网络端口。每条命令带 command_id 和 session generation，处理后写回 ACK，重复命令幂等；只有持有会话 OS 锁的进程能执行输入。
+一键脚本将校验哈希的 CPython 3.12.10 和锁定依赖准备在工作区 `local/`，不更改系统 PATH、注册表或持久执行策略，不自动登录或启动游戏。准备锁在启动任务前释放，控制命令复用已准备环境；依赖更新先确认没有活动控制器任务。任务进程读原子提交的命令文件，完成清理与检查点后写 ACK，command_id 和 generation 保证幂等与过期拒绝。任务锁与工作区控制器 OS 锁不覆盖外部 MaaEnd 或另一工作区。当前键鼠控制器均为 Null，游戏输入由操作者完成。
 
-Preflight 校验 Windows、游戏窗口/进程仍存在、控制器连接、可用截图、资源与 Agent 版本、目录权限和空间、计划与地图版本。第一帧需经黑屏/尺寸检查，不能仅以找到 HWND 宣布可采集；选择不唯一或状态不稳定时进入 Paused 并给出日志原因，不随机选择窗口。
+当前人工任务预检校验 Windows、唯一可用窗口、控制器连接和实际 PNG，正式帧另查哈希、API 时间与标定尺寸；未知位置、位姿与内参保持 null，质量保持 pending。下图和输入租约描述后续自动模式：其预检还需资源与 Agent 版本、地图、黑屏与停稳识别，不能仅以找到 HWND 宣布自动采集就绪。
 
 ```mermaid
 stateDiagram-v2
@@ -180,11 +176,11 @@ InputArbiter 属于每个控制器会话，不属于每个相机动作。owner �
 
 | 契约 | 权威仓库 | 本轮边界 |
 | --- | --- | --- |
-| CaptureBundle / Session / Plan / Frame / Batch | `enfield-capture-maaend/contracts/capture/` | 正式 draft 2020-12 schema、合成包、只读校验 |
-| WorldRelease / AssetIndex / Collision | `endfield-world-web/contracts/world/` | 正式 schema、自有极小资产、只读校验 |
-| ReconstructionBundle / PreviewSnapshot / RescanRequest / MasterAssetSet | 采集仓库未来 `contracts/reconstruction/` | 本文定义字段与约束，schema 在对应任务实现，不宣称已落地 |
+| CaptureBundle / Session / Plan / Frame / Batch | `enfield-capture-maaend/contracts/capture/` | 正式 schema、人工任务冻结导出、只读校验 |
+| WorldRelease / AssetIndex / Collision | `endfield-world-web/contracts/world/` | 正式 schema、发布校验和运行加载 |
+| ReconstructionBundle / PreviewSnapshot / RescanRequest | 采集仓库 `contracts/reconstruction/` | 离线执行、质量反馈与对应 schema 已实现；母版另由 Blender 工具管理 |
 
-每类 schema 带版本，首版读取器只声明支持 `*/1.0`；未知 major 拒绝，未知 minor 提示升级读取器。同版本非关键附加字段可忽略；改变轴向、单位、字段含义、删除必需字段必须升级 major。新必需能力不能藏在“可忽略”字段中，必须显式能力门控。
+每类 schema 显式分发支持的版本；未知版本拒绝并提示升级读取器。人工计划新增独立 `capture.plan/1.1`：execution_mode 固定 manual，位置与镜头意图为 null、settle_required 为 false，导航观测必须 not_run/null；原 `capture.plan/1.0` 的定位要求不变，其余 CaptureBundle 记录仍为 1.0。World 碰撞兼容 1.0 盒体与 2.0 三角网格。改变轴向、单位或已有字段含义等不兼容变化必须升级 major，新必需能力不能藏在可忽略字段中。
 
 World schema 由 Web 仓库唯一维护。导出器使用固定 Git commit + 文件 SHA-256 的本地副本或制品包，记录 `contracts.lock`；禁止启动时下载 latest。消费者的 vendor 副本不可独立编辑，协议变更先更新权威 schema、样例、反例，再更新生产者。无需第三仓或 npm 发布。
 
@@ -198,7 +194,7 @@ CaptureBundle 包含完整文件索引（排除索引自身防止循环哈希）
 
 WorldRelease 最小包含 scene/release/world_frame、尺度来源、脚底出生点、角色资源、camera、profiles、chunks、asset index 和构建来源。`mobile` 必需，其余档位可选。每个 chunk 的 bounds_world 已处于世界坐标；transform 仅用于局部几何一次，统一正标量缩放。LOD 数组由近到远、首项 min_distance_m=0，后续阈值严格递增，基于相机到世界包围盒距离；运行时采用滞回。碰撞独立且不随 LOD 切换。
 
-本轮 collision 最小协议以盒体为基线；真实地形所需静态三角网格在资产阶段补充明确类型及验证，不用盒体样例冒充已覆盖坡面。WorldRelease 的 asset_index_sha256 绑定资产索引，索引再绑定每个资产的字节数和 SHA-256；world.json 仍是外层分发信任根，哈希不提供发布者身份认证。资产声明依赖、类型和 required_extensions；运行加载器只启用构建时允许的解码器，不执行清单指定的任意代码。
+collision 已支持盒体与静态三角网格；真实地形的坡面、门洞和角色通行仍需场景实测。WorldRelease 的 asset_index_sha256 绑定资产索引，索引再绑定每个资产的字节数和 SHA-256；world.json 仍是外层分发信任根，哈希不提供发布者身份认证。资产声明依赖、类型和 required_extensions；运行加载器只启用构建时允许的解码器，不执行清单指定的任意代码。
 
 ### 6.2 后续中间产物字段
 
@@ -307,7 +303,7 @@ Astra（gpt-6-Astra-xhigh）负责架构、复杂取舍、集成验收和任务�
 | C05 / M4 | Sol / capture | R01、质量反馈 | preview修订与RescanRequest schema/调度 | 不读半包、不覆盖新修订、无映射不自动走图 |
 | X01 / M5 | Sol / 两仓 | M3、M4 | 多区域配准/多档LOD/流式 | 坐标/接缝一致，反复跨区资源可回收，低资源回退排队 |
 
-C00/W00 是本轮可执行基础，M0–M5 表示后续产品实施。C02 涉及的 C++ 单元测试必须独立链接，不能让测试 main 被递归源码收集加入 cpp-algo；C03 修改 Pipeline 才安排对应节点测试。不能用 schema 测试通过替代 Windows 实机验收。
+C00/W00 已提供基础，M0–M5 仍按完整验收目标跟踪。C02 的同帧完成与有界被动写入已完成本地编译回归；C04 的人工任务控制与正式导出先行交付，不依赖自动模式 C03，也不代表 C03 或完整 C04 已验收。C++ 单元测试独立链接，测试 main 仅在工作区 local 内；C03 修改 Pipeline 才安排对应节点测试。不能用 schema 测试通过替代 Windows 实机验收。
 
 ## 12. Git、追溯与首轮风险
 

@@ -4,7 +4,7 @@ Date 2026-11-09 (Asia/Shanghai). Inputs are the [requirements](requirements.md) 
 
 This document establishes the implementation baseline. Runtime acceptance is reported separately. **Confirmed** marks requirements fixed by the user, **Fact** marks checked source behavior, **Design** marks implementation decisions, and **To verify** marks conclusions that require actual devices or samples. The milestones below describe complete goals; implementing a subset does not establish milestone acceptance.
 
-Implementation update, 2026-11-09: the M0/C01 screenshot probe has been delivered and awaits actual Windows results. Independent code now covers offline execution and recovery, camera and quality reports, Blender masters, profile and LOD publication, triangle collision, streamed roaming, and performance records. See [independent implementation and hardware boundaries](implementation-status.en.md). Actual tool integration with self-authored samples is recorded separately from real-game acceptance; automated capture retains the dependencies below. New tests, samples, and game captures remain in workspace `local/` and stay off GitHub; existing history is retained.
+Implementation update, 2026-11-09: actual Windows evidence confirms normal doctor 1/1 and probe 12/12 captures; abnormal-window checks are deferred at the user's request. Native same-frame completion subscriptions and bounded passive recording are implemented, together with manual-movement task control, checkpoints, and formal frozen exports. Windows acceptance of both new features remains outstanding. Independent code also covers offline execution and recovery, camera and quality reports, Blender masters, profile and LOD publication, triangle collision, streamed roaming, and performance records. See [independent implementation and hardware boundaries](implementation-status.en.md). Tool integration with self-authored samples is recorded separately from real-game acceptance; automated capture retains the dependencies below. New tests, samples, and game captures remain in workspace `local/` and stay off GitHub; existing history is retained.
 
 ## 1. Fixed Decisions and Delivery Boundaries
 
@@ -19,7 +19,7 @@ Implementation update, 2026-11-09: the M0/C01 screenshot probe has been delivere
 | First complete loop | Manually specify viewpoints in a small region, batch-process after capture, allow production repairs, and roam one chunk with the mobile profile | Design |
 | Web stack | TypeScript + Vite + Three.js + Rapier, with React / R3F excluded from the first version | Design. A lightweight control interface needs no additional rendering lifecycle |
 | Data organization | Two code repositories + a separate data directory inside the workspace, without a third contract repository, cloud queue, or application database | Design |
-| Initial code | Formal data contracts, valid synthetic samples, validation CLI, and targeted tests | Delivered in this session |
+| Current capture code | Same-frame completion and passive diagnostics; manual-movement tasks, checkpoints, and formal exports | Locally verified; new features await Windows testing |
 
 Smooth operation and a higher-quality master remain goals. There are no constraints on cloud plans, edge nodes, or the final release package size. Synthetic samples cannot establish game-content results, actual frame rates, or reconstruction success rates.
 
@@ -41,29 +41,25 @@ flowchart LR
     S --> V[Three.js / Rapier browser]
 ```
 
-Offline processes have neither permissions nor handles to control the game. Recapture can only return recommendations, which the capture coordinator checks before scheduling. The browser contains no MaaFramework SDK, capture-session paths, or code that connects to the game.
+The diagram represents the full automated-capture target. Current manual tasks capture through the MaaFramework adapter while the operator controls movement and camera, without navigation or input leases. C++ passive records use a separate diagnostic format and are not yet integrated into formal task exports. Offline processes have neither permissions nor handles to control the game. Recapture can only return recommendations, which the capture coordinator checks before scheduling. The browser contains no MaaFramework SDK, capture-session paths, or code that connects to the game.
 
 ```text
 用户工作区/
   docs/                              Reading entry point for this plan and detailed design
   enfield-capture-maaend/             MaaEnd fork retaining history and existing directories
     agent/cpp-algo/source/MapNavigator/  Existing localization, control, navigation, with minimal integration changes
-    agent/cpp-algo/source/Capture/      Planned frame records, writing, and atomic photography actions
+    agent/cpp-algo/source/Capture/      Same-frame records, bounded writing, passive diagnostics
     assets/resource/pipeline/Capture/  Planned recognition-driven workflow
-    tools/capture/                     Contract validation delivered, runner to be added later
-    tools/reconstruction/              Planned offline task execution
-    tools/blender/                     Planned import and export scripts
-    tools/world-export/                Planned release packaging and pinned schema references
+    tools/capture/                     Probe, manual tasks, recovery, export, validation
+    tools/reconstruction/              Offline execution, recovery, quality feedback
+    tools/blender/                     Master import and export scripts
+    tools/world_export/                Release packaging and pinned schema references
     contracts/capture/                 Authoritative CaptureBundle contracts
     docs/capture/                      Requirements, detailed design, implementation tasks
   endfield-world-web/                  Independent repository
-    contracts/world/                   Authoritative WorldRelease contracts and synthetic samples
-    tools/                             Release validation and targeted tests
-    src/app/                           Planned entry point, loading status, and settings
-    src/world/                         Planned release validation, asset and region lifecycles
-    src/player/                        Planned input, character, and camera
-    src/physics/                       Planned Rapier world and collision
-    src/render/                        Planned render loop, quality, and resource disposal
+    contracts/world/                   Authoritative WorldRelease contracts
+    tools/                             Release validation
+    src/                               Entry, loading, input, collision, streaming, telemetry
   data/                               Raw images, batches, tasks, masters, release artifacts, excluded from Git
   local/                              Local qa, samples, validation, deliverables, excluded from Git
   .work/                              Session caches and validation temporary files, excluded from Git
@@ -76,7 +72,7 @@ The production toolchain follows upstream's own version requirements. Python con
 
 ## 3. MaaEnd Source Verification and Minimal Integration Design
 
-The baseline is pinned to `MaaEnd/MaaEnd@8cccaaec8f59f4b4689b59db84a39d25066ff5ec`. The fork's `v2` retains upstream history. Feature development uses `feat/architecture-foundation`, which fast-forwards into the product `main` after review. Subsequent upstream merges must first pass integration regressions, without following a moving HEAD.
+The baseline is pinned to `MaaEnd/MaaEnd@8cccaaec8f59f4b4689b59db84a39d25066ff5ec`. The fork's `v2` retains upstream history. Feature development uses separate `feat/*` branches, which fast-forward into the product `main` after review. Subsequent upstream merges must first pass integration regressions, without following a moving HEAD.
 
 | Source location, relative to the capture repository | Facts verified in this session | Design and affected scope |
 | --- | --- | --- |
@@ -91,7 +87,7 @@ The baseline is pinned to `MaaEnd/MaaEnd@8cccaaec8f59f4b4689b59db84a39d25066ff5e
 | `agent/cpp-algo/source/main.cpp` | `MaaAgentServerRegisterCustomAction/Recognition` provides the registration entry points | New actions require synchronized registration, Custom Schema, Pipeline calls, and minimal tests |
 | `agent/cpp-algo/source/CMakeLists.txt` | Recursively collects source files | New Capture sources can be discovered, but test sources must be explicitly excluded from production builds |
 
-The complete integration change list covers the provider, navigation integration, and input backend above, new Capture atomic actions, registration in `main.cpp`, `tools/schema/custom.action.schema.json`, the Pipeline that actually calls the action, interface/task/all-language text changes only when exposing a task is required, and related C++ / Pipeline regressions and fixtures. This session adds only independent contract directories and validation tools, preserving these runtime paths.
+The complete automated integration change list covers the provider, navigation integration, and input backend above, new Capture atomic actions, registration in `main.cpp`, `tools/schema/custom.action.schema.json`, the Pipeline that actually calls the action, interface/task/all-language text changes only when exposing a task is required, and related C++ / Pipeline regressions and fixtures. Current changes cover the provider and optional passive recording within navigation, preserving the old observer order and return semantics. No photography action, registration name, or Pipeline has been added. See [native same-frame recording](native-capture.en.md).
 
 Follow upstream's division in which the Pipeline manages flow and the algorithm layer handles difficult operations. Game UI recognition and state progression use the Pipeline. C++ handles same-frame data, resource lifecycles, atomic input operations, and lightweight gating. The Python CLI manages task lifecycles, batches, and offline production, without creating a second blind-keypress navigation runner. State recognition requires actual screenshots and ROIs before templates are created.
 
@@ -110,24 +106,24 @@ The first version fixes each exported package to one session / clock lifecycle. 
 
 ## 4. Windows CLI, State Machine, and Input Ownership
 
-The following interfaces are planned for M1 and are unavailable in this session's implementation.
+The current manual-movement interfaces follow, with `capture` standing for `python -B -m tools.capture`. Full arguments, file structure, and hardware steps are documented in the [manual capture CLI](manual-cli.en.md).
 
 ```text
 capture doctor --workspace <root>
-capture start --plan <plan.json> --workspace <root>
-capture status --session <id>
-capture pause --session <id>
-capture stop --session <id>
-capture resume --session <id>
-capture logs --session <id> --follow
-capture export --session <id> --batch <id>
-scripts/start-capture.ps1 -Plan <plan.json> -Workspace <root>
-scripts/start-capture.cmd <plan.json> <root>
+capture start --workspace <root> --task <id> --region-label <label> --count 12 --interval 5
+capture status --workspace <root> --task <id>
+capture pause --workspace <root> --task <id>
+capture stop --workspace <root> --task <id>
+capture resume --workspace <root> --task <id>
+capture logs --workspace <root> --task <id> --follow
+capture export --workspace <root> --task <id> [--session <session_id>]
+scripts/capture/capture.ps1 start -Workspace <root> --task <id> --region-label <label>
+scripts/capture/capture.cmd start --task <id> --region-label <label>
 ```
 
-The one-command scripts only check the environment and invoke the same CLI. They leave system execution policies unchanged and never log in, start the game, or install software implicitly. The task process reads control-command files atomically committed inside the workspace, while status commands read checkpoints. The first version needs no listening network port. Every command carries a command_id and session generation, with an ACK written after processing. Repeated commands are idempotent, and only the process holding the session's OS lock may send input.
+The one-command scripts prepare hash-verified CPython 3.12.10 and locked dependencies inside workspace `local/`, without changing the system PATH, registry, or persistent execution policy, logging in, or starting the game. The setup lock is released before task startup, and control commands reuse the prepared environment. Dependency updates first verify that no controller task is active. Tasks read atomically committed command files and ACK only after cleanup and checkpoint persistence; command_id and generation provide idempotency and stale-command rejection. Task and workspace-controller OS locks do not cover external MaaEnd instances or another workspace. Keyboard and mouse controllers are currently Null; the operator supplies game input.
 
-Preflight checks Windows, the continued existence of the game window/process, controller connectivity, usable screenshots, resource and Agent versions, directory permissions and free space, and plan and map versions. The first frame must pass black-screen and size checks. Finding an HWND alone cannot establish capture readiness. An ambiguous selection or unstable state enters Paused with the reason logged, without choosing a random window.
+Current manual preflight checks Windows, a uniquely eligible window, controller connectivity, and an actual PNG. Formal frames additionally verify hashes, API timing, and calibration dimensions. Unknown positions, poses, and intrinsics remain null, and quality remains pending. The diagram and input lease below describe subsequent automated mode, whose preflight also needs resource and Agent versions, maps, black-screen detection, and settling recognition. Finding an HWND alone cannot establish automated capture readiness.
 
 ```mermaid
 stateDiagram-v2
@@ -180,11 +176,11 @@ Cross-machine handoff transfers only frozen CaptureBundles. Offline tasks start 
 
 | Contract | Authoritative repository | Scope in this session |
 | --- | --- | --- |
-| CaptureBundle / Session / Plan / Frame / Batch | `enfield-capture-maaend/contracts/capture/` | Formal draft 2020-12 schemas, synthetic bundle, read-only validation |
-| WorldRelease / AssetIndex / Collision | `endfield-world-web/contracts/world/` | Formal schemas, tiny self-authored assets, read-only validation |
-| ReconstructionBundle / PreviewSnapshot / RescanRequest / MasterAssetSet | Future `contracts/reconstruction/` in the capture repository | This document defines fields and constraints. Schemas are implemented in their respective tasks and remain future work |
+| CaptureBundle / Session / Plan / Frame / Batch | `enfield-capture-maaend/contracts/capture/` | Formal schemas, manual task frozen exports, read-only validation |
+| WorldRelease / AssetIndex / Collision | `endfield-world-web/contracts/world/` | Formal schemas, release validation, runtime loading |
+| ReconstructionBundle / PreviewSnapshot / RescanRequest | Capture repository `contracts/reconstruction/` | Offline execution, quality feedback, and corresponding schemas are implemented; Blender tools manage masters separately |
 
-Every schema category is versioned. Initial readers declare support only for `*/1.0`, reject unknown major versions, and request a reader upgrade for unknown minor versions. Noncritical additional fields within the same version may be ignored. Changing axes, units, field meanings, or removing required fields requires a major-version increase. New required capabilities need explicit capability gating and must remain outside ignorable fields.
+Each schema dispatches explicitly supported versions; unknown versions are rejected with a reader-upgrade requirement. Manual plans add the separate `capture.plan/1.1`: execution_mode is manual, position and camera intent are null, settle_required is false, and navigation observations must be not_run/null. Original `capture.plan/1.0` localization requirements remain unchanged, and other CaptureBundle records remain 1.0. World collision supports 1.0 boxes and 2.0 triangle meshes. Incompatible changes to axes, units, or existing field meanings require a major-version increase; new required capabilities cannot be hidden in ignorable fields.
 
 The web repository exclusively maintains the World schemas. The exporter uses a local copy or artifact package pinned by Git commit + file SHA-256 and records it in `contracts.lock`, without downloading latest at startup. Consumers must preserve vendor copies unchanged. Contract changes first update the authoritative schema, samples, and negative cases, then update producers. No third repository or npm publication is needed.
 
@@ -198,7 +194,7 @@ Rejected images and screenshot failures are distinct states. A successful screen
 
 A minimal WorldRelease contains scene/release/world_frame, scale provenance, a feet-origin spawn, character asset, camera, profiles, chunks, asset index, and build provenance. `mobile` is required, and other profiles are optional. Each chunk's bounds_world is already in world coordinates. Its transform applies to local geometry once, with a uniform positive scalar scale. LOD arrays run near to far, start with min_distance_m=0, and have strictly increasing later thresholds based on the camera's distance to the world bounding box. The runtime uses hysteresis. Collision is independent and stays unchanged across LOD switches.
 
-The minimal collision contract in this session uses boxes. Static triangle meshes required by actual terrain will receive explicit types and validation during the asset stage. A boxes sample cannot establish slope coverage. WorldRelease's asset_index_sha256 binds the asset index, which in turn binds each asset's byte length and SHA-256. world.json remains the outer distribution trust root, and hashes provide no publisher authentication. Assets declare dependencies, type, and required_extensions. The runtime loader enables only decoders permitted at build time and never executes arbitrary code named by a manifest.
+Collision supports boxes and static triangle meshes; slopes, doorways, and character traversal in actual terrain still require scene testing. WorldRelease's asset_index_sha256 binds the asset index, which in turn binds each asset's byte length and SHA-256. world.json remains the outer distribution trust root, and hashes provide no publisher authentication. Assets declare dependencies, type, and required_extensions. The runtime loader enables only decoders permitted at build time and never executes arbitrary code named by a manifest.
 
 ### 6.2 Fields for Subsequent Intermediate Artifacts
 
@@ -307,7 +303,7 @@ Astra (gpt-6-Astra-xhigh) owns architecture, complex tradeoffs, integration acce
 | C05 / M4 | Sol / capture | R01, quality feedback | Preview revisions and RescanRequest schema/scheduling | Avoid partial bundles, preserve newer revisions, prohibit automatic navigation without mapping |
 | X01 / M5 | Sol / both repositories | M3, M4 | Multi-region registration/multi-profile LOD/streaming | Consistent coordinates/seams, reclaimable resources after repeated crossings, queued fallback under low resources |
 
-C00/W00 provide the executable foundation in this session. M0–M5 describe subsequent product implementation. C++ unit tests for C02 must link independently, preventing recursive source collection from adding a test main to cpp-algo. Schedule corresponding node tests when C03 modifies the Pipeline. Passing schema tests cannot replace acceptance on an actual Windows machine.
+C00/W00 provide the foundation, while M0–M5 remain tracked against their full acceptance goals. C02 same-frame completion and bounded passive writing have passed local compilation and regressions. C04 manual task control and formal exports are delivered ahead of automated C03, without establishing C03 or full C04 acceptance. C++ unit tests link independently, with test main files only in workspace local. Schedule corresponding node tests when C03 modifies the Pipeline. Passing schema tests cannot replace acceptance on an actual Windows machine.
 
 ## 12. Git, Traceability, and Initial Risks
 
