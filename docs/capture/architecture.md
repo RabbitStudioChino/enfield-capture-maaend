@@ -4,7 +4,7 @@
 
 本文是实施基线，不是运行验收报告。标记含义：**确认**为用户固定要求，**事实**为核对源码所得，**设计**为实施决策，**待验**为需要真实设备或样本的结论。下文里程碑描述完整目标，部分功能的代码完成不代表该里程碑已经验收。
 
-2026-11-09 实施补充：Windows 正常截图已收到 doctor 1/1 与 probe 12/12 实机证据；异常窗口专项按用户要求暂缓。已实现原生同帧完成订阅、有界被动写入，以及人工走位采集的任务控制、检查点和正式冻结导出，两项新功能的 Windows 实机验收尚未完成。独立代码还覆盖离线执行与恢复、相机及质量报告、Blender 母版、多档与 LOD 发布、三角碰撞、分区漫游和性能记录，详见[独立编码与实机边界](implementation-status.md)。自有样本工具联调与真实游戏验收分开记录；自动采集仍遵守下文依赖。新增测试、样例和游戏采样只保存在工作区 `local/`，不进入 GitHub；既有历史不改写。
+2026-11-09 实施补充：按最新指令跳过本轮全部测试，完成“地图选择或输入区域名 → 传送 → 可达路径规划 → 自动跑图 → 镜头转向与停稳 → 原尺寸同帧截图 → 检查点及冻结导出”的编码。入口和边界见[自动区域采集](automatic-capture.md)。本轮仅进行静态审查与生产交付构建，不将代码完成写成实机验收。此前 doctor 1/1、probe 12/12 和独立工具检查保留为历史证据，不覆盖新增功能。离线重建、Blender 母版及独立网页实现见[实施状态](implementation-status.md)。新增测试、样例和游戏采样只保存在工作区 local，不进入 GitHub；既有历史不改写。
 
 ## 1. 固定决策与交付边界
 
@@ -16,10 +16,10 @@
 | 后续平台 | macOS、PlayCover、ADB 保留架构，首版不实现、不列验收项 | 确认 |
 | 制作环境 | COLMAP → OpenMVS → Blender，独立进程；同机或搬运数据到 Mac / Linux / 工作站 | 确认 |
 | 网页边界 | 浏览器只依赖静态 WorldRelease 和运行时代码；不连接游戏或 MaaEnd | 确认 |
-| 首个闭环 | 人工指定小区域观察点，采完后批处理、允许制作修补、手机档单块漫游 | 设计 |
+| 首个闭环 | 地图点选、绘制选区或输入区域名，自动规划并跑图截图；采完后独立批处理、制作与漫游 | 已编码，本轮未测试 |
 | 网页技术 | TypeScript + Vite + Three.js + Rapier；首版不加入 React / R3F | 设计：轻量控制界面无需额外渲染生命周期 |
 | 数据组织 | 两个代码仓库 + 工作区内独立数据目录；不建第三个协议仓库、云队列或业务数据库 | 设计 |
-| 当前采集代码 | 同帧完成记录与被动诊断；人工走位任务、检查点和正式导出 | 本地验证完成，新增功能待 Windows 实测 |
+| 当前采集代码 | 区域目录、覆盖规划、原生摄影、自动任务和本机控制页；保留人工任务 | 已编码，本轮未测试 |
 
 运行流畅与较高质量母版仍是目标；不设置云套餐、边缘节点或最终发行包大小约束。游戏内容、真实帧率、重建成功率不得由合成样例推断。
 
@@ -27,12 +27,12 @@
 
 ```mermaid
 flowchart LR
-    U[Windows CLI / 任务控制] --> H[MaaFramework Tasker / AgentClient]
+    U[Windows CLI / 本机采集控制页] --> H[MaaFramework Tasker / AgentClient]
     H --> P[MaaEnd Pipeline / 导航]
-    P --> A[采集接入 / 输入租约 / 同帧记录]
+    P --> A[专用串行会话 / 原生摄影 / 同帧记录]
     A --> C[MaaEnd 控制器适配层]
     C --> G[运行中的游戏]
-    A --> W[有界异步写入]
+    A --> W[逐帧原子提交 / 可选被动写入]
     W --> B[不可变 CaptureBundle]
     B --> R[COLMAP / OpenMVS 子进程]
     R --> M[Blender 母版和人工修补]
@@ -41,16 +41,16 @@ flowchart LR
     S --> V[Three.js / Rapier 浏览器]
 ```
 
-上图表示完整自动采集目标。当前人工任务直接通过 MaaFramework 适配层截图，由操作者移动与控制镜头，不运行导航或输入租约；C++ 被动记录使用独立诊断格式，尚未接入正式任务导出。离线进程没有控制游戏的权限或句柄；补采只能返回建议，由采集协调器核对后排程。浏览器中不存在 MaaFramework SDK、采集会话路径或连接游戏的代码。
+自动任务复用真实传送 Pipeline 和 `MapNavigateAction`，在导航退出后串行调用 `CaptureViewAction`。原生摄影回执经任务层生成正式 CaptureBundle；被动导航诊断仍保留独立格式。本机采集控制页只服务于 Windows 采集机，和独立 `endfield-world-web` 漫游站点分开。离线进程没有控制游戏的权限或句柄；质量补采无可靠映射时只返回建议。独立漫游网页不含 MaaFramework SDK 或连接游戏的代码。
 
 ```text
 用户工作区/
   docs/                              本次方案和详细设计的阅读入口
   enfield-capture-maaend/             MaaEnd Fork，保留历史与既有目录
     agent/cpp-algo/source/MapNavigator/  既有定位、控制、导航；最小接入改动
-    agent/cpp-algo/source/Capture/      同帧记录、有界写入、被动诊断
-    assets/resource/pipeline/Capture/  拟新增识别驱动流程
-    tools/capture/                     探针、人工任务、恢复、导出与校验
+    agent/cpp-algo/source/Capture/      同帧摄影、停稳门控、有界被动诊断
+    assets/resource/pipeline/          复用现有传送与导航识别资源
+    tools/capture/                     区域规划、自动/人工任务、本机控制页、导出
     tools/reconstruction/              离线任务执行、恢复与质量反馈
     tools/blender/                     母版导入与导出脚本
     tools/world_export/                发布打包及固定 schema 引用
@@ -87,7 +87,9 @@ flowchart LR
 | `agent/cpp-algo/source/main.cpp` | `MaaAgentServerRegisterCustomAction/Recognition` 为注册入口 | 新动作需同步注册、Custom Schema、Pipeline 调用与最小测试 |
 | `agent/cpp-algo/source/CMakeLists.txt` | 递归收集源码 | 新 Capture 源码可被发现，但测试源必须明确排除生产构建 |
 
-完整自动接入改动清单：上述 provider、导航接入和输入后端；新 Capture 原子动作；`main.cpp` 注册；`tools/schema/custom.action.schema.json`；实际使用该动作的 Pipeline；需要暴露任务时才改 interface、任务与所有语言文案；相关 C++ / Pipeline 回归与 fixture。当前已修改 provider 和导航内的可选被动记录，保留旧 observer 顺序及返回语义；没有新增摄影动作、注册名或 Pipeline。详见[原生同帧记录](native-capture.md)。
+自动接入包含 provider 摄影入口、`CaptureViewAction` 及注册与 schema、`MapNavmeshQuery` 的 `coverage` / `capture_clock`、专用 AgentSession、动态任务 Pipeline 和区域计划。复用既有传送识别资源，不臆造截图模板。保留旧 observer 顺序及返回语义，详见[原生同帧记录](native-capture.md)。
+
+区域名来自现有传送锚点目录，不是完整行政边界。默认范围是锚点周围 60 个 BaseNav 像素，间距 20，每点 8 个视角，最多 160 个可达采样点；用户可绘制选区。规划使用真实 Navmesh、NoGo 与可达分量，冻结资源哈希并核对实际运行资源。定位由同一张原尺寸图缩放到 720 短边后得到；规划层高不冒充实测高度，俯仰、内参和渲染时间未知时保持 null。
 
 遵循上游“Pipeline 管流程、算法层管难点”：游戏界面识别和状态推进通过 Pipeline，C++ 负责同帧数据、资源生命周期、输入原子操作与轻量门控。Python CLI 管任务生命周期、批次与离线制作，不在 Python 中另写一套盲按键跑图器。没有真实截图与 ROI 的状态识别不编造模板。
 
@@ -102,13 +104,16 @@ flowchart LR
 
 旧 observer 与新增完成订阅使用不同语义和名称，避免所有扫描器被迫改为定位后执行。首版一个 writer 订阅即可，不实现通用事件总线框架。订阅回调不能抛异常穿过导航循环；磁盘错误回报协调器并暂停输入。
 
-首版每个导出包固定一个 session / clock 生命周期。同进程 pause / resume 保留时钟；进程重启后 resume 沿用逻辑任务检查点，但新建 session_id / clock_id / segment_id，复制计划并更新 session_id，另导出包。旧会话和批次保持不变，由后续重建任务显式引用多包输入，不能混进当前单时钟包。帧 ID 不复用。主机请求/完成时刻不是游戏渲染帧时间；无法测得的 native timestamp 必须为 null。跨时钟只靠 UTC 锚点作近似排序，不比较不同 clock_id 的单调值。
+首版每个导出包固定一个 session / clock 生命周期。自动任务使用原生进程统一时钟；暂停或重启导致原生进程重建时，恢复沿用任务检查点并新建 session_id / clock_id / segment_id，另导出包。旧会话和批次保持不变，任务退出自动冻结所有非空会话。后续重建显式引用多包输入。帧 ID 不复用，主机时间不是游戏渲染时间；无法测得的 native timestamp 必须为 null。不同 clock_id 的单调值不可比较。
 
 ## 4. Windows CLI、状态机与输入控制权
 
-当前人工走位采集接口如下，`capture` 代表 `python -B -m tools.capture`。完整参数、文件结构与实机步骤见[人工采集 CLI](manual-cli.md)。
+`capture` 代表 `python -B -m tools.capture`。双击根目录 `capture.cmd` 默认打开本机采集页；名称直接启动见[自动区域采集](automatic-capture.md)，手动走位见[人工采集 CLI](manual-cli.md)。
 
 ```text
+capture serve --workspace <root>
+capture regions --workspace <root>
+capture auto --workspace <root> --region 缘缘庄
 capture doctor --workspace <root>
 capture start --workspace <root> --task <id> --region-label <label> --count 12 --interval 5
 capture status --workspace <root> --task <id>
@@ -121,9 +126,9 @@ scripts/capture/capture.ps1 start -Workspace <root> --task <id> --region-label <
 scripts/capture/capture.cmd start --task <id> --region-label <label>
 ```
 
-一键脚本将校验哈希的 CPython 3.12.10 和锁定依赖准备在工作区 `local/`，不更改系统 PATH、注册表或持久执行策略，不自动登录或启动游戏。准备锁在启动任务前释放，控制命令复用已准备环境；依赖更新先确认没有活动控制器任务。任务进程读原子提交的命令文件，完成清理与检查点后写 ACK，command_id 和 generation 保证幂等与过期拒绝。任务锁与工作区控制器 OS 锁不覆盖外部 MaaEnd 或另一工作区。当前键鼠控制器均为 Null，游戏输入由操作者完成。
+一键脚本将校验哈希的 CPython 3.12.10 和锁定依赖准备在工作区 local，不更改系统 PATH、注册表或持久执行策略，不自动登录或启动游戏。准备锁在启动任务前释放，控制命令复用已准备环境；依赖更新先确认没有活动控制器任务。任务进程读原子提交的命令文件，清理和检查点完成后写 ACK，command_id 和 generation 保证幂等与过期拒绝。工作区锁不覆盖外部 MaaEnd 或另一工作区。自动模式使用 Win32 ScreenDC / Seize，启动及恢复尝试恢复窗口前台；人工模式仍使用 Null 输入。
 
-当前人工任务预检校验 Windows、唯一可用窗口、控制器连接和实际 PNG，正式帧另查哈希、API 时间与标定尺寸；未知位置、位姿与内参保持 null，质量保持 pending。下图和输入租约描述后续自动模式：其预检还需资源与 Agent 版本、地图、黑屏与停稳识别，不能仅以找到 HWND 宣布自动采集就绪。
+预检校验 Windows、唯一可用窗口、控制器连接和实际 PNG；自动模式还校验固定 SDK、原生运行文件、资源快照与原生时钟。摄影必须确认目标距离、镜头朝向、连续图像差分和定位稳定；失败记录原因并停止推进，已提交帧保留。未知位姿、俯仰、内参和渲染时间保持 null，质量保持 pending。下图描述目标状态，当前无法可靠恢复的错误进入暂停或失败，由显式恢复重做预检与传送。
 
 ```mermaid
 stateDiagram-v2
@@ -156,11 +161,11 @@ stateDiagram-v2
 | 游戏过图 / 传送 / 相机模式变动 | paused 或 recovering，新轨迹片段/标定组 | 不跨断点插值、不沿旧导航位置续跑 |
 | 任务完成 | completed | 不自动再次执行；新任务新会话 |
 
-InputArbiter 属于每个控制器会话，不属于每个相机动作。owner 只允许 `navigation / capture / recovery / none`，切换时递增 lease generation；旧 generation 的排队动作即使醒来也不得执行。优先级为 stop/失焦 > recovery > capture > navigation；切换必须先等旧 owner 释放。MaaEnd 其他日常任务不可与采集同控制器并发。需要覆盖扫描器触发的交互、脱困、镜头和移动，不只是 Capture 调用。
+首版输入互斥使用专用 Tasker、工作区控制器锁和串行任务执行：传送结束后导航，导航释放扫描器和移动输入后摄影，不与 MaaEnd 日常任务共享活动控制器。暂停/停止先 `post_stop`，有限等待退出及键鼠释放后才确认 ACK；强杀或释放未确认记失败。没有改造全部 MaaEnd 任务为全局 InputArbiter；未来确需同一会话并发调度时再引入覆盖所有输入通路的租约机制。
 
 控制面检查周期设计目标为 100 ms，输入释放目标为 500 ms（待实机验证，受后端调用阻塞影响）。正常停止必须测试；进程被强杀、驱动卡死或系统断电时无法承诺用户态清理执行，启动器恢复时先发释放操作并要求重新预检。
 
-停稳依据来自图像差分与观测稳定窗口，阈值写入标定配置；超时返回 recover，禁止仅 sleep 固定秒数后视为稳定。镜头增量完成后用新帧确认，保留摄影输入和观测差异。
+停稳由图像差分与观测稳定窗口联合判断，摄影实现中阈值集中定义；超时返回明确错误，不能仅 sleep 固定秒数。镜头增量完成后用新帧确认。当前阈值未做游戏现场校准，动态 HUD、角色待机和环境变化可能导致超时，不通过跳过门控掩盖。
 
 ## 5. 有界写入、不可变批次与搬运
 
@@ -303,7 +308,7 @@ Astra（gpt-6-Astra-xhigh）负责架构、复杂取舍、集成验收和任务�
 | C05 / M4 | Sol / capture | R01、质量反馈 | preview修订与RescanRequest schema/调度 | 不读半包、不覆盖新修订、无映射不自动走图 |
 | X01 / M5 | Sol / 两仓 | M3、M4 | 多区域配准/多档LOD/流式 | 坐标/接缝一致，反复跨区资源可回收，低资源回退排队 |
 
-C00/W00 已提供基础，M0–M5 仍按完整验收目标跟踪。C02 的同帧完成与有界被动写入已完成本地编译回归；C04 的人工任务控制与正式导出先行交付，不依赖自动模式 C03，也不代表 C03 或完整 C04 已验收。C++ 单元测试独立链接，测试 main 仅在工作区 local 内；C03 修改 Pipeline 才安排对应节点测试。不能用 schema 测试通过替代 Windows 实机验收。
+C00/W00 已提供基础，M0–M5 仍按完整验收目标跟踪。C03/C04 已接入自动传送、覆盖规划、原生摄影及任务恢复导出，采用专用串行会话替代全局租约改造。最新指令跳过所有测试，不以 Windows 验收阻塞编码与交付构建。旧 C02 和人工任务检查不证明新增链路通过。测试源只留在工作区 local，不能进入生产递归收集或 GitHub。
 
 ## 12. Git、追溯与首轮风险
 
@@ -323,4 +328,4 @@ C00/W00 已提供基础，M0–M5 仍按完整验收目标跟踪。C02 的同帧
 | 母版修订破坏修补与碰撞 | 新旧重建导入与锚点往返 | 修补保留、坐标变更全链失效、发布整体切换 |
 | 手机持续性能不达标 | 代表设备10分钟漫游及跨区反复加载 | 根据瓶颈降档/分块；记录未达标设备，不做普遍保证 |
 
-当前未验证：运行中的 Windows 游戏连接与采集、真实重建质量、Blender 实际导出、真实场景漫游与手机性能。桌面浏览器和触屏模拟只验证运行时控制逻辑；离线输入校验只验证数据组织与完整性，均不替代这些验收。各模块分别交付，不混称首版产品完成。
+当前未验证：新增自动跑图与摄影的游戏内效果、现场停稳与镜头参数、真实游戏数据重建质量、真实场景漫游与手机性能。旧版正常截图和自有样本工具联调已有记录，均不替代新增自动链路验收。本轮不执行任何测试，交付状态明确区分编码、生产构建与实际效果。

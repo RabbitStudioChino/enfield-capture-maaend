@@ -1,6 +1,6 @@
 # Finite Windows Capture Validation
 
-This document covers the M0/C01 Windows connection and finite capture probe. User acceptance on a Windows machine is required. Results use the `capture.probe/1.0` diagnostic format, with navigation and camera pose both set to `null`. A later same-frame localization and capture workflow will produce formal `CaptureBundle` packages.
+This is the retained M0/C01 diagnostic probe reference. The latest instruction skips all tests; no steps or returned results are requested for this round. For normal use, see [automatic region capture](automatic-capture.en.md). Probe output remains diagnostic `capture.probe/1.0`, while formal CaptureBundles come from manual or automatic tasks.
 
 ## Environment Preparation
 

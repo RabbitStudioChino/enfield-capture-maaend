@@ -1,6 +1,6 @@
 # Windows 有限截图验证
 
-本文说明 M0/C01 的 Windows 连接与有限截图探针。当前实现需要用户在 Windows 实机验收。结果使用 `capture.probe/1.0` 诊断格式，导航与相机位姿均为 `null`，正式 `CaptureBundle` 由后续同帧定位与采集流程生成。
+本文保留 M0/C01 诊断探针说明。最新指令跳过所有测试，本轮不要求执行以下步骤或回传结果。正常使用见[自动区域采集](automatic-capture.md)。探针使用独立 `capture.probe/1.0` 诊断格式，正式 CaptureBundle 由人工或自动任务生成。
 
 ## 环境准备
 

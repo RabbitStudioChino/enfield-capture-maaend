@@ -2,6 +2,8 @@
 
 更新日期为 2026-11-09。C02 在既有 `PositionProvider` 上增加完成订阅，并通过现有 `MapNavigateAction` 提供可选的被动诊断录制。任务层的人工采集与正式包交付见对应 CLI 说明，原生诊断数据使用独立格式。
 
+自动采集现已通过 `CaptureViewAction` 接入：只转动镜头，确认到达与停稳，保存原尺寸 PNG 和同一图像派生的定位，共用原生进程时钟。专用 worker 在导航结束后调用摄影动作，并由任务层生成正式 CaptureBundle。见[自动区域采集](automatic-capture.md)。本次新增功能全部测试跳过，下文验证记录仅对应此前被动写入实现。
+
 ## 完成订阅
 
 `capture()` 和 `captureForStrictGoal()` 每次调用分配本次 `session_id`、`clock_id` 与递增 `frame_id`。每个 provider 持有独立会话及 UTC / 单调时钟锚点，作用域内所有尝试共用该时钟。完成记录包含截图请求、截图完成、定位起止与整体完成的主机单调时间。`native_render_timestamp` 保留为 `null`，`frame_freshness` 为 `unknown`。
@@ -32,7 +34,7 @@ $env:MAAEND_NATIVE_CAPTURE_WORKSPACE = (Resolve-Path '.').Path
 
 输出位于该工作区的 `local/native-capture/<session_id>/`，包含 `session.json`、`frames.jsonl`、`images/` 和停止时的 `summary.json`。工作区及输出目录必须为真实目录，路径中的符号链接和 Windows reparse point 会被拒绝。环境变量未设置时保持现有导航行为。
 
-`PassiveRecorder` 在导航调用内持有 writer 与订阅，退出时先注销再排空。写入故障只从后台设置原子故障标志，导航线程通过现有 `should_stop` 路径停止扫描器并释放移动输入。最后排空阶段的写入或 summary 故障同样使该导航调用返回失败。录制只观察既有导航截图，摄影采样、输入租约和新的 Pipeline 状态属于后续任务接入。
+`PassiveRecorder` 在导航调用内持有 writer 与订阅，退出时先注销再排空。写入故障只从后台设置原子故障标志，导航线程通过现有 `should_stop` 路径停止扫描器并释放移动输入。最后排空阶段的写入或 summary 故障同样使该导航调用返回失败。被动录制只观察既有导航截图；自动摄影使用上文专用串行任务链路，不将被动诊断混入正式导出。
 
 ## 本地验证与实机边界
 

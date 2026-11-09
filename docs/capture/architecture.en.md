@@ -4,7 +4,7 @@ Date 2026-11-09 (Asia/Shanghai). Inputs are the [requirements](requirements.md) 
 
 This document establishes the implementation baseline. Runtime acceptance is reported separately. **Confirmed** marks requirements fixed by the user, **Fact** marks checked source behavior, **Design** marks implementation decisions, and **To verify** marks conclusions that require actual devices or samples. The milestones below describe complete goals; implementing a subset does not establish milestone acceptance.
 
-Implementation update, 2026-11-09: actual Windows evidence confirms normal doctor 1/1 and probe 12/12 captures; abnormal-window checks are deferred at the user's request. Native same-frame completion subscriptions and bounded passive recording are implemented, together with manual-movement task control, checkpoints, and formal frozen exports. Windows acceptance of both new features remains outstanding. Independent code also covers offline execution and recovery, camera and quality reports, Blender masters, profile and LOD publication, triangle collision, streamed roaming, and performance records. See [independent implementation and hardware boundaries](implementation-status.en.md). Tool integration with self-authored samples is recorded separately from real-game acceptance; automated capture retains the dependencies below. New tests, samples, and game captures remain in workspace `local/` and stay off GitHub; existing history is retained.
+Implementation update, 2026-11-09: the latest instruction skips all tests for this round. Code now covers map selection or region-name input → teleport → reachable coverage planning → automatic navigation → camera yaw and settling → raw same-frame photography → checkpoints and frozen exports. See [automatic region capture](automatic-capture.en.md). This round includes static review and production delivery builds only, without claiming hardware acceptance. Earlier doctor 1/1, probe 12/12 and independent tool checks remain historical evidence and do not cover the new feature. See [implementation status](implementation-status.en.md) for offline reconstruction, Blender masters and the independent web runtime. New tests, samples and game images stay inside workspace local and off GitHub; existing history is retained.
 
 ## 1. Fixed Decisions and Delivery Boundaries
 
@@ -16,10 +16,10 @@ Implementation update, 2026-11-09: actual Windows evidence confirms normal docto
 | Later platforms | Preserve architectural support for macOS, PlayCover, and ADB. Implementation and acceptance for the first version exclude these platforms | Confirmed |
 | Production environment | COLMAP → OpenMVS → Blender as separate processes, either on the same machine or after transferring data to a Mac / Linux machine / workstation | Confirmed |
 | Web boundary | The browser depends only on a static WorldRelease and runtime code, with no connection to the game or MaaEnd | Confirmed |
-| First complete loop | Manually specify viewpoints in a small region, batch-process after capture, allow production repairs, and roam one chunk with the mobile profile | Design |
+| First complete loop | Pick an anchor, draw a selection, or enter a region name to plan, navigate and capture automatically; process, produce and roam independently afterward | Implemented; untested this round |
 | Web stack | TypeScript + Vite + Three.js + Rapier, with React / R3F excluded from the first version | Design. A lightweight control interface needs no additional rendering lifecycle |
 | Data organization | Two code repositories + a separate data directory inside the workspace, without a third contract repository, cloud queue, or application database | Design |
-| Current capture code | Same-frame completion and passive diagnostics; manual-movement tasks, checkpoints, and formal exports | Locally verified; new features await Windows testing |
+| Current capture code | Region catalog, coverage planning, native photography, automatic tasks and local control page; manual tasks retained | Implemented; untested this round |
 
 Smooth operation and a higher-quality master remain goals. There are no constraints on cloud plans, edge nodes, or the final release package size. Synthetic samples cannot establish game-content results, actual frame rates, or reconstruction success rates.
 
@@ -27,12 +27,12 @@ Smooth operation and a higher-quality master remain goals. There are no constrai
 
 ```mermaid
 flowchart LR
-    U[Windows CLI / task control] --> H[MaaFramework Tasker / AgentClient]
+    U[Windows CLI / local capture page] --> H[MaaFramework Tasker / AgentClient]
     H --> P[MaaEnd Pipeline / navigation]
-    P --> A[Capture integration / input lease / same-frame records]
+    P --> A[Dedicated serial session / native photography / same-frame records]
     A --> C[MaaEnd controller adapter]
     C --> G[Running game]
-    A --> W[Bounded asynchronous writer]
+    A --> W[Atomic per-frame commits / optional passive recording]
     W --> B[Immutable CaptureBundle]
     B --> R[COLMAP / OpenMVS subprocesses]
     R --> M[Blender master and manual repairs]
@@ -41,16 +41,16 @@ flowchart LR
     S --> V[Three.js / Rapier browser]
 ```
 
-The diagram represents the full automated-capture target. Current manual tasks capture through the MaaFramework adapter while the operator controls movement and camera, without navigation or input leases. C++ passive records use a separate diagnostic format and are not yet integrated into formal task exports. Offline processes have neither permissions nor handles to control the game. Recapture can only return recommendations, which the capture coordinator checks before scheduling. The browser contains no MaaFramework SDK, capture-session paths, or code that connects to the game.
+Automatic tasks reuse actual teleport Pipelines and `MapNavigateAction`, invoking `CaptureViewAction` serially after navigation exits. The task layer converts native photography receipts into formal CaptureBundles; passive navigation diagnostics retain a separate format. The local control page serves the Windows capture machine and is separate from the independent `endfield-world-web` roaming site. Offline processes have no game-control permissions or handles. Quality recapture without reliable mapping remains advisory. The independent roaming website contains neither MaaFramework SDK nor game-connection code.
 
 ```text
 用户工作区/
   docs/                              Reading entry point for this plan and detailed design
   enfield-capture-maaend/             MaaEnd fork retaining history and existing directories
     agent/cpp-algo/source/MapNavigator/  Existing localization, control, navigation, with minimal integration changes
-    agent/cpp-algo/source/Capture/      Same-frame records, bounded writing, passive diagnostics
-    assets/resource/pipeline/Capture/  Planned recognition-driven workflow
-    tools/capture/                     Probe, manual tasks, recovery, export, validation
+    agent/cpp-algo/source/Capture/      Same-frame photography, settling gates, bounded passive diagnostics
+    assets/resource/pipeline/          Existing teleport and navigation recognition resources
+    tools/capture/                     Region planning, automatic/manual tasks, local control page, exports
     tools/reconstruction/              Offline execution, recovery, quality feedback
     tools/blender/                     Master import and export scripts
     tools/world_export/                Release packaging and pinned schema references
@@ -87,7 +87,9 @@ The baseline is pinned to `MaaEnd/MaaEnd@8cccaaec8f59f4b4689b59db84a39d25066ff5e
 | `agent/cpp-algo/source/main.cpp` | `MaaAgentServerRegisterCustomAction/Recognition` provides the registration entry points | New actions require synchronized registration, Custom Schema, Pipeline calls, and minimal tests |
 | `agent/cpp-algo/source/CMakeLists.txt` | Recursively collects source files | New Capture sources can be discovered, but test sources must be explicitly excluded from production builds |
 
-The complete automated integration change list covers the provider, navigation integration, and input backend above, new Capture atomic actions, registration in `main.cpp`, `tools/schema/custom.action.schema.json`, the Pipeline that actually calls the action, interface/task/all-language text changes only when exposing a task is required, and related C++ / Pipeline regressions and fixtures. Current changes cover the provider and optional passive recording within navigation, preserving the old observer order and return semantics. No photography action, registration name, or Pipeline has been added. See [native same-frame recording](native-capture.en.md).
+Automatic integration includes the provider photography entry, `CaptureViewAction` registration and schema, `MapNavmeshQuery` operations `coverage` / `capture_clock`, dedicated AgentSession, dynamic task Pipelines and region plans. Existing teleport recognition resources are reused without inventing templates. Existing observer order and return semantics remain intact. See [native same-frame records](native-capture.en.md).
+
+Region names come from the existing teleport-anchor catalog and do not define complete administrative boundaries. Defaults cover a radius of 60 BaseNav pixels, spacing 20, eight views per point and at most 160 reachable sample points; users can draw a selection. Planning uses real Navmesh, NoGo constraints and reachable components, freezing resource hashes and checking the actual runtime resources. Localization uses the same raw photograph resized to a 720-pixel short side. Planned deck height is not a measured observation; unknown pitch, intrinsics and render timestamps remain null.
 
 Follow upstream's division in which the Pipeline manages flow and the algorithm layer handles difficult operations. Game UI recognition and state progression use the Pipeline. C++ handles same-frame data, resource lifecycles, atomic input operations, and lightweight gating. The Python CLI manages task lifecycles, batches, and offline production, without creating a second blind-keypress navigation runner. State recognition requires actual screenshots and ROIs before templates are created.
 
@@ -102,13 +104,16 @@ Follow upstream's division in which the Pipeline manages flow and the algorithm 
 
 The existing observer and the new completion subscription use distinct names and semantics so that existing scanners can retain their execution before localization. A single writer subscription is sufficient initially, without a general event-bus framework. Subscription callbacks must contain exceptions within the navigation loop boundary. Disk errors are reported to the coordinator and pause input.
 
-The first version fixes each exported package to one session / clock lifecycle. In-process pause / resume preserves the clock. After a process restart, resume retains the logical task checkpoint but creates new session_id / clock_id / segment_id values, copies the plan with its session_id updated, and exports a separate package. Old sessions and batches remain unchanged. Subsequent reconstruction tasks explicitly reference multiple input packages, keeping them outside the current single-clock package. Frame IDs are never reused. Host request/completion times differ from game-render frame times. Unmeasurable native timestamps must be null. UTC anchors provide approximate ordering across clocks, while monotonic values from different clock_id values remain incomparable.
+Each export contains one session / clock lifecycle. Automatic tasks use the native process clock. When pause or restart replaces that process, resume keeps the logical checkpoint but creates new session_id / clock_id / segment_id values and a separate export. Old sessions and batches remain immutable; task exit freezes every nonempty session. Reconstruction explicitly references multiple packages. Frame IDs are not reused. Host times are not game-render times, so unavailable native timestamps remain null. Monotonic values from different clock_id values are incomparable.
 
 ## 4. Windows CLI, State Machine, and Input Ownership
 
-The current manual-movement interfaces follow, with `capture` standing for `python -B -m tools.capture`. Full arguments, file structure, and hardware steps are documented in the [manual capture CLI](manual-cli.en.md).
+`capture` stands for `python -B -m tools.capture`. Double-click root `capture.cmd` to open the local control page. See [automatic region capture](automatic-capture.en.md) for direct named startup and [manual capture CLI](manual-cli.en.md) for operator movement.
 
 ```text
+capture serve --workspace <root>
+capture regions --workspace <root>
+capture auto --workspace <root> --region 缘缘庄
 capture doctor --workspace <root>
 capture start --workspace <root> --task <id> --region-label <label> --count 12 --interval 5
 capture status --workspace <root> --task <id>
@@ -121,9 +126,9 @@ scripts/capture/capture.ps1 start -Workspace <root> --task <id> --region-label <
 scripts/capture/capture.cmd start --task <id> --region-label <label>
 ```
 
-The one-command scripts prepare hash-verified CPython 3.12.10 and locked dependencies inside workspace `local/`, without changing the system PATH, registry, or persistent execution policy, logging in, or starting the game. The setup lock is released before task startup, and control commands reuse the prepared environment. Dependency updates first verify that no controller task is active. Tasks read atomically committed command files and ACK only after cleanup and checkpoint persistence; command_id and generation provide idempotency and stale-command rejection. Task and workspace-controller OS locks do not cover external MaaEnd instances or another workspace. Keyboard and mouse controllers are currently Null; the operator supplies game input.
+The launchers prepare hash-verified CPython 3.12.10 and locked dependencies inside workspace local without changing system PATH, registry or persistent execution policy, logging in or starting the game. The setup lock is released before task launch; controls reuse the prepared environment, and dependency updates reject active controller tasks. Commands are atomic files, ACKs follow cleanup and checkpoints, and command_id / generation enforce idempotency and stale-command rejection. Workspace locks do not cover external MaaEnd instances or other workspaces. Automatic mode uses Win32 ScreenDC / Seize and attempts foreground restoration at start or resume. Manual mode retains Null input.
 
-Current manual preflight checks Windows, a uniquely eligible window, controller connectivity, and an actual PNG. Formal frames additionally verify hashes, API timing, and calibration dimensions. Unknown positions, poses, and intrinsics remain null, and quality remains pending. The diagram and input lease below describe subsequent automated mode, whose preflight also needs resource and Agent versions, maps, black-screen detection, and settling recognition. Finding an HWND alone cannot establish automated capture readiness.
+Preflight checks Windows, a uniquely eligible window, connectivity and an actual PNG. Automatic mode also checks the pinned SDK, native runtime files, resource snapshots and native clock. Photography verifies arrival distance, camera yaw, successive image differences and localization stability. Failure records the reason and stops progression while preserving committed frames. Unknown pose, pitch, intrinsics and render times remain null; quality remains pending. The diagram shows the target state model; currently unrecoverable errors pause or fail, and explicit resume repeats preflight and teleport.
 
 ```mermaid
 stateDiagram-v2
@@ -156,11 +161,11 @@ Any active state can be interrupted by pause / stop. Implement a shared terminat
 | Game area transition / teleport / camera-mode change | paused or recovering, with a new trajectory segment/calibration group | No interpolation across the discontinuity or continuation from the old navigation position |
 | Task complete | completed | No automatic rerun. A new task gets a new session |
 
-InputArbiter belongs to each controller session, beyond individual camera actions. The owner is restricted to `navigation / capture / recovery / none`. Switching increments the lease generation, and queued actions from an old generation remain prohibited even if they wake up. Priority is stop/focus loss > recovery > capture > navigation. A switch must wait for the previous owner to release control. Other MaaEnd routine tasks cannot run concurrently with capture on the same controller. Coverage includes scanner-triggered interactions, recovery from being stuck, camera actions, and movement, beyond Capture calls alone.
+Initial input exclusion uses a dedicated Tasker, a workspace controller lock and serial execution: teleport, then navigation, then photography after scanners and movement exit. Capture never shares an active controller with routine MaaEnd tasks. Pause/stop first calls `post_stop`, waits a bounded time for exit and input release, then confirms its ACK. Forced termination or unconfirmed release fails. Existing MaaEnd tasks were not converted to a global InputArbiter; introduce leases covering every input path only if concurrent scheduling within one session becomes necessary.
 
 The control-plane polling design target is 100 ms, and the input-release target is 500 ms. Both require actual-machine verification and depend on blocking backend calls. Normal stopping must be tested. User-space cleanup cannot be guaranteed after a forced process kill, a stalled driver, or power loss. Launcher recovery first sends release operations and requires preflight to run again.
 
-Settling is determined from image differences and an observation-stability window, with thresholds stored in calibration configuration. A timeout returns recover. A fixed sleep alone cannot establish stability. After a camera increment completes, confirm with a new frame and preserve the differences between photography inputs and observations.
+Settling combines image differences with an observation-stability window; thresholds are centralized in the photography implementation. Timeout returns an explicit error, and a fixed sleep cannot establish stability. New frames confirm camera increments. These thresholds have not been calibrated in the actual game; dynamic HUD, character idle animation and environmental changes can cause timeouts. Gates are not bypassed to hide that limitation.
 
 ## 5. Bounded Writing, Immutable Batches, and Transfer
 
@@ -303,7 +308,7 @@ Astra (gpt-6-Astra-xhigh) owns architecture, complex tradeoffs, integration acce
 | C05 / M4 | Sol / capture | R01, quality feedback | Preview revisions and RescanRequest schema/scheduling | Avoid partial bundles, preserve newer revisions, prohibit automatic navigation without mapping |
 | X01 / M5 | Sol / both repositories | M3, M4 | Multi-region registration/multi-profile LOD/streaming | Consistent coordinates/seams, reclaimable resources after repeated crossings, queued fallback under low resources |
 
-C00/W00 provide the foundation, while M0–M5 remain tracked against their full acceptance goals. C02 same-frame completion and bounded passive writing have passed local compilation and regressions. C04 manual task control and formal exports are delivered ahead of automated C03, without establishing C03 or full C04 acceptance. C++ unit tests link independently, with test main files only in workspace local. Schedule corresponding node tests when C03 modifies the Pipeline. Passing schema tests cannot replace acceptance on an actual Windows machine.
+C00/W00 provide the foundation, while M0–M5 retain their full acceptance goals. C03/C04 now integrate automatic teleport, coverage, native photography, task recovery and exports, using a dedicated serial session instead of global lease changes. The latest instruction skips all tests and does not block coding or delivery builds on Windows acceptance. Historical C02 and manual-task checks do not establish that the new chain passed. Test sources remain in workspace local, outside production source collection and GitHub.
 
 ## 12. Git, Traceability, and Initial Risks
 
@@ -323,4 +328,4 @@ Upstream synchronization retains the upstream remote and records the baseline an
 | Master revisions break repairs and collision | Import old/new reconstructions and round-trip anchors | Preserve repairs, invalidate the entire coordinate-dependent chain on coordinate changes, switch releases as a whole |
 | Sustained mobile performance falls below target | Ten-minute roaming on representative devices and repeated cross-region loading | Lower quality/chunk according to bottlenecks. Record devices below target without universal guarantees |
 
-Still unverified are connection to and capture from a running Windows game, actual reconstruction quality, real Blender export, roaming in reconstructed scenes, and mobile performance. Desktop browser and emulated touch checks cover runtime controls; offline input verification covers data organization and integrity. Neither replaces those acceptance checks. Modules are delivered separately without claiming first-version product completion.
+Still unverified are in-game automatic navigation and photography, settling and camera calibration, reconstruction quality from actual game data, real-scene roaming and mobile performance. Historical normal screenshots and self-authored sample integration do not establish acceptance of this new chain. No tests run this round; implementation, production builds and actual behavior are reported separately.

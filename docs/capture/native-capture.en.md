@@ -2,6 +2,8 @@
 
 Updated 2026-11-09. C02 adds completion subscriptions to the existing `PositionProvider` and optional passive diagnostic recording through `MapNavigateAction`. The task-layer CLI owns manual capture and formal package delivery. Native diagnostic data uses a separate format.
 
+Automatic capture now uses `CaptureViewAction`: camera-only yaw control, arrival and settling gates, raw PNG plus localization derived from the same image, and a native process clock. The dedicated worker calls it after navigation exits and turns its receipt into a formal CaptureBundle. See [automatic region capture](automatic-capture.en.md). All tests for this addition are skipped; the checks below describe earlier passive-recording work.
+
 ## Completion Subscription
 
 Each `capture()` and `captureForStrictGoal()` call assigns a current `session_id`, `clock_id`, and increasing `frame_id`. Each provider owns a separate session and UTC / monotonic anchors, sharing its clock across attempts within that scope. Completion records include host monotonic screenshot request, screenshot completion, localization start and end, and overall completion times. `native_render_timestamp` remains `null`, and `frame_freshness` is `unknown`.
@@ -32,7 +34,7 @@ $env:MAAEND_NATIVE_CAPTURE_WORKSPACE = (Resolve-Path '.').Path
 
 Output goes to that workspace's `local/native-capture/<session_id>/`, containing `session.json`, `frames.jsonl`, `images/`, and `summary.json` after stopping. The workspace and output directories must be real directories. Symlinks and Windows reparse points along the path are rejected. An unset environment variable preserves existing navigation behavior.
 
-`PassiveRecorder` owns the writer and subscription inside the navigation call, resetting the subscription before draining. Background write failures only set an atomic fault flag. The navigation thread follows the existing `should_stop` path to stop scanners and release movement input. Write or summary failure during final draining also makes that navigation call return failure. Recording observes existing navigation screenshots. Photographic sampling, input leases, and new Pipeline states belong to later task integration.
+`PassiveRecorder` owns the writer and subscription inside the navigation call, resetting the subscription before draining. Background write failures only set an atomic fault flag. The navigation thread follows the existing `should_stop` path to stop scanners and release movement input. Write or summary failure during final draining also makes that navigation call return failure. Passive recording observes existing navigation screenshots. Automatic photography instead uses the dedicated serial task path described above, without mixing passive diagnostics into formal exports.
 
 ## Local Verification and Hardware Boundaries
 

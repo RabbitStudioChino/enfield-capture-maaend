@@ -1,13 +1,14 @@
 # Independent Implementation and Hardware Boundaries
 
-Updated 2026-11-09 (Asia/Shanghai). This document separates implementation, tool integration, and actual game acceptance. The [detailed architecture](architecture.en.md) remains the design baseline.
+Updated 2026-11-09 (Asia/Shanghai). This document separates implementation, tool integration, and actual game acceptance. The [detailed architecture](architecture.en.md) remains the design baseline. The latest instruction skips all tests for the new automatic-region work. Static review and production packaging continue; no hardware handoff is required to finish coding.
 
 ## Implementation Independent of Windows Results
 
 | Module | Implementation and entry point | Acceptance boundary |
 | --- | --- | --- |
-| Native same-frame records | Completion subscription, raw localization and normalized snapshots, bounded queue, optional passive PNG / JSONL diagnostics; [native integration](native-capture.en.md) | Full macOS build and independent regressions passed; Windows navigation remains untested, and diagnostics are not integrated into formal exports |
-| Manual capture tasks | start / status / pause / stop / resume / logs / export, OS locks, command ACKs, checkpoint recovery, per-frame commits, frozen bundles; [manual CLI](manual-cli.en.md) | Null input with operator-controlled movement and camera; new Windows task acceptance remains outstanding, with automatic navigation and settling recognition unimplemented |
+| Native same-frame records | Completion subscription, raw and normalized localization, bounded passive diagnostics and native `CaptureViewAction`; [native integration](native-capture.en.md) | Earlier checks cover the passive implementation only; new photography is untested |
+| Manual capture tasks | start / status / pause / stop / resume / logs / export, locks, ACKs, immutable commits and checkpoints; [manual CLI](manual-cli.en.md) | Manual mode retains Null input; shared lifecycle changes are untested this round |
+| Automatic region capture | Search or select an anchor, draw an area, plan reachable Navmesh coverage, teleport, navigate, confirm yaw and settling, capture the same raw frame, resume and automatically export; [automatic capture](automatic-capture.en.md) | Code integrated; all tests and game validation skipped. Named anchors do not define full area boundaries; settling thresholds remain uncalibrated |
 | Capture handoff | CaptureBundle validation, frozen input preparation, provenance and calibration groups, immutable copies, and transfer verification; [input preparation](offline-preparation.en.md) | Probe directories are not converted into fabricated capture sessions |
 | Offline reconstruction | Tool capabilities and fingerprints, plans, staged execution, status, cancellation, checkpoint recovery, and artifact checks; [pipeline](reconstruction-pipeline.en.md) | Runs actual COLMAP / OpenMVS; process success does not establish geometry acceptance |
 | Coordinates and feedback | COLMAP model parsing, camera conversion, explicit scale and coordinate revisions, statistics, PreviewSnapshot / RescanRequest | Without a reliable navigation mapping, suggestions remain for manual review and send no game commands |
@@ -18,7 +19,7 @@ Updated 2026-11-09 (Asia/Shanghai). This document separates implementation, tool
 
 The [independent web repository](https://github.com/RabbitStudioChino/endfield-world-web) owns browser implementation and instructions. Triangle collision uses the separate `world.collision/2.0` format while retaining `1.0` boxes. The capture repository pins schemas without copying web runtime code.
 
-## Actual Tool Checks Performed
+## Historical Tool Checks Before Automatic Capture
 
 The native module completed a full production `cpp-algo` compile and link using official MaaDeps v3.0.0, MaaFramework 5.14.3, OpenCV 4.12.0, and AppleClang 21. Independent tests and AddressSanitizer / UndefinedBehaviorSanitizer checks passed. Independent tests substitute controller screenshots and localization, so they do not establish in-game navigation acceptance. LeakSanitizer was not run in this macOS environment.
 
@@ -38,17 +39,17 @@ The interrupted run's outer PowerShell report finalized, but the old Python depe
 
 On 2026-11-09 the user explicitly requested skipping abnormal-window tests and continuing development. These checks are deferred. Existing normal captures, window rejections, and interruption records remain available; deferred checks are not marked as passed and no longer block independent development.
 
-## Remaining Work Requiring Actual Evidence
+## Unverified Behavior and Data-Dependent Quality
 
 | Work | Missing evidence | Next action |
 | --- | --- | --- |
-| Fixed Windows launcher interruption and window diagnostics | Updated installation terminal state, finalized outer and capture reports, and live snapshots distinguishing focus loss from minimization | Defer abnormal-window checks at the user's request, retain the hardware-validation limits, and continue independent development |
-| Manual tasks and frozen exports | Concurrent controls, ACKs, restart continuation, and actual frozen bundles from the new Windows entry point | Verify the normal start / pause / resume / stop / export loop, actual images, and immutable old sessions, without abnormal-window checks |
-| Native integration and automated capture | Native Windows build and actual navigation, localization input, and Pipeline recognition templates | Verify C02 passive records, then integrate photography actions, input leases, and formal tasks; the implemented manual C04 subset does not establish automated-mode completion |
+| Fixed Windows launcher interruption and window diagnostics | Actual finalized reports and separate focus/minimization evidence | Deferred; no testing requested in this round |
+| Manual tasks and frozen exports | Actual task ACKs, restart continuation and immutable bundles | Preserve the code and historical evidence; all new testing is skipped |
+| Native integration and automated capture | Actual teleport, routes, raw same-frame photography, camera/settling calibration | Complete code and Windows production packaging; no tests or device gate this round |
 | Game reconstruction settings and quality | Real multiview data, dynamic occlusion, HUD, usable camera groups, and held-out views | Calibrate filtering, masks, and reconstruction parameters; choose recapture or manual repairs |
 | Automatic recapture and cross-region registration | Actual floor mappings, reachable viewpoints, trustworthy anchors, and errors | Add validated automated decisions to explicit transforms and revision constraints; bounding-box placement does not establish registration |
 | Real-scene and mobile experience | Actual assets, target iOS / Android devices, and sustained interaction records | Check doorways, slopes, steps, boundaries, sustained performance, background recovery, and thermal behavior before setting final parameters |
 
 macOS game capture, PlayCover, ADB, first person, WebGPU, learned geometry, and splat branches remain explicitly deferred options. The first version reconstructs original images with explicit camera groups; it does not promise automatic semantic cleanup, automatic hole repairs, or mask propagation across every tool version.
 
-Return results to workspace `local/validation/windows-capture/<run-id>/`. New tests, samples, game images, masters, downloads, and logs stay off GitHub. Production code, schemas, and operating instructions are committed by feature.
+No test results are requested in this round. Runtime data stays in workspace `local/capture/<task-id>/`, and delivery archives stay in `local/deliverables/`. New tests, samples, game images, masters, downloads and logs stay off GitHub. Production code, schemas and instructions are committed by feature.

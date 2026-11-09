@@ -5,6 +5,8 @@ Updated 2026-11-09.
 
 The operator controls movement, heading and camera. The CLI connects to the running game and captures through MaaFramework `ScreenDC`, with both input backends set to `Null`. It runs no navigation, settling recognition or automatic exploration. Valid PNG images retain quality `pending`. Position, FOV, camera pose and native render timestamps remain unknown.
 
+For automatic movement, use [automatic region capture](automatic-capture.en.md). Root `capture.cmd` now opens its local control page by default; explicit `start` still runs the manual mode in this document. This round skips all tests, including the optional procedures below.
+
 ## Windows operation
 
 Run these commands at the extracted capture repository root. `capture.cmd` uses this directory as its workspace by default, with dependencies, tasks, logs, originals and exports under `local/`. The PowerShell script also accepts `-Workspace` for another root. `doctor`, `probe` and `start` prepare the environment under an installation lock. Other commands use the prepared environment.
