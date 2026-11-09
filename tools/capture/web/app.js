@@ -137,7 +137,7 @@ async function setMap(mapId) {
     if (generation === state.mapGeneration) message("底图加载失败，请检查正式地图资源是否齐全。", true);
   };
   image.src = `/api/map?map=${encodeURIComponent(mapId)}`;
-  if ($("show-mesh").checked) await loadMesh(generation);
+  if ($("show-mesh").checked) void loadMesh(generation);
 }
 
 async function chooseRegion(region) {
