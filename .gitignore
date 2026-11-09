@@ -518,5 +518,6 @@ __pycache__/
 /tools/reconstruction/tests/
 /tools/blender/tests/
 /tools/world-export/tests/
+/tools/world_export/tests/
 /agent/cpp-algo/source/Capture/tests/
 /agent/cpp-algo/source/Capture/test/
