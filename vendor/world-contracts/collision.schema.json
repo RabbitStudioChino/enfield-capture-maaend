@@ -1,0 +1,52 @@
+{
+  "type": "object",
+  "required": [
+    "schema_version",
+    "coordinate_space",
+    "shape_type",
+    "boxes"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "world.collision/1.0"
+    },
+    "coordinate_space": {
+      "const": "chunk_local"
+    },
+    "shape_type": {
+      "const": "boxes"
+    },
+    "boxes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "center",
+          "half_extents",
+          "rotation_xyzw"
+        ],
+        "properties": {
+          "center": {
+            "$ref": "world-release.schema.json#/$defs/vec3"
+          },
+          "half_extents": {
+            "type": "array",
+            "minItems": 3,
+            "maxItems": 3,
+            "items": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            }
+          },
+          "rotation_xyzw": {
+            "$ref": "world-release.schema.json#/$defs/quaternion"
+          }
+        }
+      },
+      "minItems": 1
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://endfield-world.invalid/contracts/world/1.0/collision.schema.json",
+  "title": "World collision boxes 1.0"
+}

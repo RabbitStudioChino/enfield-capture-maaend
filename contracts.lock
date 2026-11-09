@@ -1,0 +1,10 @@
+{
+    "repository": "https://github.com/RabbitStudioChino/endfield-world-web",
+    "commit": "6a1c4e8a6be8959736b00b09ab964c8f323f4d5d",
+    "schemas": {
+        "world-release.schema.json": "9bb4c7564f5c3cb82dcc007a81a49aad5d5da1eac2beb772328dc9c2259a7594",
+        "asset-index.schema.json": "f7de92db99cab55af2fb2cf01a162326fb35b0a8dc50453e2db8e9342cb0b043",
+        "collision.schema.json": "bed9d725b16a30a4ea59d8b0995c764884415687247d415873a08e303dedd0cd",
+        "collision-trimesh.schema.json": "3692abe1f5b5aa27787eaccbe3e47bb1eef1fa385509febbd2333f582eb186e1"
+    }
+}

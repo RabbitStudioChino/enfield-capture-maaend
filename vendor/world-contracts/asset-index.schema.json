@@ -1,0 +1,74 @@
+{
+  "type": "object",
+  "required": [
+    "schema_version",
+    "assets"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "world.assets/1.0"
+    },
+    "assets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "asset_id",
+          "type",
+          "uri",
+          "sha256",
+          "byte_length",
+          "dependencies",
+          "required_extensions"
+        ],
+        "properties": {
+          "asset_id": {
+            "$ref": "world-release.schema.json#/$defs/id"
+          },
+          "type": {
+            "enum": [
+              "render_mesh",
+              "character",
+              "collision",
+              "buffer",
+              "texture",
+              "material"
+            ]
+          },
+          "uri": {
+            "$ref": "world-release.schema.json#/$defs/release_uri"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$(?![\\s\\S])"
+          },
+          "byte_length": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "dependencies": {
+            "type": "array",
+            "items": {
+              "$ref": "world-release.schema.json#/$defs/id"
+            },
+            "minItems": 0,
+            "uniqueItems": true
+          },
+          "required_extensions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_]*$(?![\\s\\S])"
+            },
+            "minItems": 0,
+            "uniqueItems": true
+          }
+        }
+      },
+      "minItems": 1
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://endfield-world.invalid/contracts/world/1.0/asset-index.schema.json",
+  "title": "World asset index 1.0"
+}

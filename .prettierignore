@@ -40,3 +40,6 @@ agent/go-service/vendor/
 # GitHub Workflows (avoid permission issues during auto-format)
 .github/workflows/*.yml
 .github/workflows/*.yaml
+
+# 固定 commit + SHA-256 的网页正式契约，必须保留权威仓库原始字节
+vendor/world-contracts/

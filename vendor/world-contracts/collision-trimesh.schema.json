@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://endfield-world.invalid/contracts/world/2.0/collision-trimesh.schema.json",
+  "title": "World static collision triangle mesh 2.0",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "coordinate_space",
+    "shape_type",
+    "vertices",
+    "triangles"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "world.collision/2.0"
+    },
+    "coordinate_space": {
+      "const": "chunk_local"
+    },
+    "shape_type": {
+      "const": "trimesh"
+    },
+    "vertices": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 1000000,
+      "items": {
+        "$ref": "https://endfield-world.invalid/contracts/world/1.0/world-release.schema.json#/$defs/vec3"
+      }
+    },
+    "triangles": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 2000000,
+      "items": {
+        "type": "array",
+        "minItems": 3,
+        "maxItems": 3,
+        "items": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 999999
+        }
+      }
+    }
+  }
+}
