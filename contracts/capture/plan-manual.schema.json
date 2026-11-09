@@ -1,0 +1,111 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://schemas.endfield.local/capture/1.1/plan.schema.json",
+    "title": "Manual capture plan",
+    "type": "object",
+    "required": [
+        "schema_version",
+        "plan_id",
+        "revision",
+        "session_id",
+        "region_id",
+        "map_coordinates",
+        "waypoints",
+        "execution_mode"
+    ],
+    "properties": {
+        "schema_version": {
+            "const": "capture.plan/1.1"
+        },
+        "plan_id": {
+            "$ref": "https://schemas.endfield.local/capture/1.0/common.schema.json#/$defs/id"
+        },
+        "revision": {
+            "type": "integer",
+            "minimum": 1
+        },
+        "session_id": {
+            "$ref": "https://schemas.endfield.local/capture/1.0/common.schema.json#/$defs/id"
+        },
+        "region_id": {
+            "$ref": "https://schemas.endfield.local/capture/1.0/common.schema.json#/$defs/id"
+        },
+        "map_coordinates": {
+            "type": "object",
+            "required": [
+                "coordinate_frame_id",
+                "unit",
+                "axes",
+                "heading_unit",
+                "heading_convention",
+                "scale_status"
+            ],
+            "properties": {
+                "coordinate_frame_id": {
+                    "$ref": "https://schemas.endfield.local/capture/1.0/common.schema.json#/$defs/id"
+                },
+                "unit": {
+                    "const": "map_pixel"
+                },
+                "axes": {
+                    "const": "x_right_y_down"
+                },
+                "heading_unit": {
+                    "const": "degree"
+                },
+                "heading_convention": {
+                    "const": "clockwise_from_map_up"
+                },
+                "scale_status": {
+                    "const": "arbitrary"
+                }
+            }
+        },
+        "waypoints": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": [
+                    "waypoint_id",
+                    "segment_id",
+                    "position_xy",
+                    "camera_intent"
+                ],
+                "properties": {
+                    "waypoint_id": {
+                        "$ref": "https://schemas.endfield.local/capture/1.0/common.schema.json#/$defs/id"
+                    },
+                    "segment_id": {
+                        "$ref": "https://schemas.endfield.local/capture/1.0/common.schema.json#/$defs/id"
+                    },
+                    "position_xy": {
+                        "type": "null"
+                    },
+                    "camera_intent": {
+                        "type": "object",
+                        "required": [
+                            "yaw_degrees",
+                            "pitch_degrees",
+                            "settle_required"
+                        ],
+                        "properties": {
+                            "yaw_degrees": {
+                                "type": "null"
+                            },
+                            "pitch_degrees": {
+                                "type": "null"
+                            },
+                            "settle_required": {
+                                "const": false
+                            }
+                        }
+                    }
+                }
+            },
+            "minItems": 1
+        },
+        "execution_mode": {
+            "const": "manual"
+        }
+    }
+}

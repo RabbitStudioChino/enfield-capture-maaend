@@ -71,9 +71,7 @@ def make_validators():
         schema = load_json(path.read_bytes(), path.name)
         Draft202012Validator.check_schema(schema)
         schemas[path.stem.removesuffix(".schema")] = schema
-    registry = Registry().with_resources(
-        (schema["$id"], Resource.from_contents(schema)) for schema in schemas.values()
-    )
+    registry = Registry().with_resources((schema["$id"], Resource.from_contents(schema)) for schema in schemas.values())
     return {
         name: Draft202012Validator(schema, registry=registry, format_checker=FormatChecker())
         for name, schema in schemas.items()
@@ -83,11 +81,14 @@ def make_validators():
 def check_record(validators, kind, record, label):
     version = record.get("schema_version") if isinstance(record, dict) else None
     expected = f"capture.{kind}/1.0"
-    if version != expected:
+    supported = {expected: kind}
+    if kind == "plan":
+        supported["capture.plan/1.1"] = "plan-manual"
+    if not isinstance(version, str) or version not in supported:
         match = re.fullmatch(rf"capture\.{kind}/([0-9]+)\.([0-9]+)", str(version))
         reason = "unknown major" if match and match[1] != "1" else "unsupported schema_version"
-        raise BundleValidationError(f"{label}: {reason} {version!r}, expected {expected}")
-    error = next(validators[kind].iter_errors(record), None)
+        raise BundleValidationError(f"{label}: {reason} {version!r}, expected {', '.join(supported)}")
+    error = next(validators[supported[version]].iter_errors(record), None)
     if error:
         location = "/".join(str(part) for part in error.absolute_path)
         raise BundleValidationError(f"{label}/{location}: {error.message}")
@@ -189,6 +190,11 @@ def check_frames(frames, session, plan, files):
             f"{label}: navigation coordinate frame mismatch",
         )
         observations = [navigation[key] for key in ("position_xy", "floor_height", "character_heading", "camera_yaw")]
+        if plan["schema_version"] == "capture.plan/1.1":
+            require(
+                locate is None and all(item["status"] == "not_run" and item["value"] is None for item in observations),
+                f"{label}: manual capture cannot claim navigation observations",
+            )
         if locate is None:
             require(all(item["status"] == "not_run" for item in observations), f"{label}: recognition has no time")
         image = frame["image"]
@@ -202,7 +208,9 @@ def check_frames(frames, session, plan, files):
             )
         else:
             require(locate is None, f"{label}: failed capture cannot have recognition time")
-            require(all(item["status"] == "not_run" for item in observations), f"{label}: failed capture has observations")
+            require(
+                all(item["status"] == "not_run" for item in observations), f"{label}: failed capture has observations"
+            )
             require(frame["quality"]["selection_status"] == "rejected", f"{label}: failed capture must be rejected")
         if frame["quality"]["selection_status"] == "rejected":
             require(bool(frame["quality"]["rejection_reasons"]), f"{label}: rejected frame has no reason")

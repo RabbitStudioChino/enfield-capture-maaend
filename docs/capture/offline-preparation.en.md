@@ -16,7 +16,7 @@ python -m tools.reconstruction prepare --workspace /absolute/workspace --bundle 
 python -m tools.reconstruction verify --workspace /absolute/workspace --job region-a-001
 ```
 
-Repeat `--bundle` to combine bundles, listing each bundle once. Frozen export by the production collector is not yet implemented. Current local, self-authored synthetic bundles only exercise tool logic and must retain their `source.kind=synthetic` provenance.
+Repeat `--bundle` to combine bundles, listing each bundle once. Frozen exports for manually positioned tasks are described in the [task CLI](manual-cli.en.md). The actual Windows task workflow still awaits acceptance. Local, self-authored synthetic bundles only exercise tool logic and must retain their `source.kind=synthetic` provenance.
 
 ```bash
 python -m tools.reconstruction prepare --workspace /absolute/workspace --bundle /absolute/workspace/local/capture/bundle-a --bundle /absolute/workspace/local/capture/bundle-b --job region-a-002

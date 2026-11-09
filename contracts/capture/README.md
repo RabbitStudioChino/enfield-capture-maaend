@@ -1,6 +1,6 @@
 # CaptureBundle 1.0
 
-本目录是采集输入协议的权威来源。仓库提供 JSON Schema 2020-12 和只读离线校验器；测试与自有合成样例仅保留在父工作区 `local/`，不提交或上传 GitHub。协议供后续采集器与重建消费者接入，实机采集与重建尚待实现和验收。
+本目录是采集输入协议的权威来源。仓库提供 JSON Schema 2020-12 和只读离线校验器；测试与自有合成样例仅保留在父工作区 `local/`，不提交或上传 GitHub。人工走位任务实现见[任务 CLI](../../docs/capture/manual-cli.md)，真实 Windows 任务闭环与重建质量仍待验收。
 
 ## 文件与版本
 
@@ -9,11 +9,12 @@
 | `bundle.schema.json` | `capture.bundle/1.0` | 冻结包入口、来源和完整文件哈希索引 |
 | `session.schema.json` | `capture.session/1.0` | 会话、时钟锚点、来源、控制器类型及标定组 |
 | `plan.schema.json` | `capture.plan/1.0` | 单区域、单计划修订、路段、观察点与镜头意图 |
+| `plan-manual.schema.json` | `capture.plan/1.1` | `execution_mode=manual`，位置和镜头角度固定 `null`，`settle_required=false` |
 | `frame.schema.json` | `capture.frame/1.0` | 同帧身份、时间、图像、导航、方向与质量 |
 | `batch.schema.json` | `capture.batch/1.0` | 已提交批次、不可变帧分片和输入来源快照 |
 | `common.schema.json` | 无独立记录版本 | 上述 schema 的共享定义 |
 
-读取器仅接受 `1.0`，未知 major 报 `unknown major`，其他版本报 `unsupported schema_version`。同版本的非关键附加字段可以被忽略。必填字段、时间、坐标或来源含义的改变须明确升级协议并更新接受版本。Schema 的 `$id` 用作本地注册标识，校验器使用本目录文件离线解析引用。
+读取器显式接受计划 `1.0` 和人工专用 `1.1`，其余记录仅接受 `1.0`，未知 major 报 `unknown major`，其他版本报 `unsupported schema_version`。同版本的非关键附加字段可以被忽略。必填字段、时间、坐标或来源含义的改变须明确升级协议并更新接受版本。Schema 的 `$id` 用作本地注册标识，校验器使用本目录文件离线解析引用。
 
 ## 冻结包布局
 
@@ -29,7 +30,7 @@ images/raw/<frame_id>.png
 
 `bundle.json` 的 `status` 必须为 `frozen`。`files` 列出包内除 `bundle.json` 自身以外的全部文件及其 SHA-256，避免循环哈希。路径使用安全的 POSIX 相对路径，禁止绝对路径、反斜杠、冒号、`%`、`?`、`#`、空路径段、`.`、`..`、控制字符与符号链接。额外文件必须进入索引，未完成的写入产物须在导出前排除。
 
-一个包限定一个会话、一个 `clock_id`、一个区域和一个计划修订。同进程暂停后恢复保留时钟。进程重启后恢复可以保留逻辑任务与检查点，但须新建 `session_id`、`clock_id` 和 `segment_id`，复制计划并更新会话身份，另行导出包。旧包保留独立，未来由重建输入的 `input_batch_ids` 关联多个会话。过图或位置断点通过新的 `segment_id` 表达，画面配置变更通过新的标定组表达。`plan.json` 中的观察点保存地图像素坐标及镜头意图，意图值不能作为实际观测。
+一个包限定一个会话、一个 `clock_id`、一个区域和一个计划修订。同进程暂停后恢复保留时钟。进程重启后恢复可以保留逻辑任务与检查点，但须新建 `session_id`、`clock_id` 和 `segment_id`，复制计划并更新会话身份，另行导出包。旧包保留独立，未来由重建输入的 `input_batch_ids` 关联多个会话。过图或位置断点通过新的 `segment_id` 表达，画面配置变更通过新的标定组表达。`capture.plan/1.0` 的观察点保存地图像素坐标及镜头意图，意图值不能作为实际观测。人工专用 `capture.plan/1.1` 要求 `execution_mode=manual`，观察点位置及镜头角度固定 `null`，`settle_required=false`，四种导航观测均为 `not_run/null`，识别完成时间为 `null`。每个人工观察点使用独立路段，不声明连续轨迹。
 
 ## 不可变批次与导出
 
@@ -40,7 +41,7 @@ images/raw/<frame_id>.png
 - 同一帧允许被多个批次引用，聚合索引内 `frame_id` 唯一，所有聚合帧均须被已提交批次引用。直接传入活动会话目录会因缺少冻结包入口或完整性条件失败。
 - 所有非空 JSONL 文件均需以换行结束，逐行必须是完整的严格 JSON。校验拒绝重复 JSON 键、超出 IEEE-754 有限范围的数值、空白记录、部分记录、缺失文件和哈希不符。纳秒字符串保留整数精度。
 
-此阶段提供校验能力。创建检查点、原子提交、冻结复制、恢复与导出执行器留待采集实现阶段。
+人工任务已提供检查点、原子提交、冻结复制、恢复与导出，见[任务 CLI](../../docs/capture/manual-cli.md)。自动导航和真实设备验收分别跟踪。
 
 ## 帧、时间与坐标
 

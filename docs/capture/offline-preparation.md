@@ -16,7 +16,7 @@ python -m tools.reconstruction prepare --workspace /absolute/workspace --bundle 
 python -m tools.reconstruction verify --workspace /absolute/workspace --job region-a-001
 ```
 
-合并多个包时重复传入 `--bundle`，每个包只列一次。正式采集器的冻结导出尚待实现；当前本地自制合成包只能检查工具逻辑，必须保留其 `source.kind=synthetic` 来源。
+合并多个包时重复传入 `--bundle`，每个包只列一次。人工走位任务的冻结导出见[任务 CLI](manual-cli.md)，真实 Windows 任务闭环仍待验收。本地自制合成包只能检查工具逻辑，必须保留其 `source.kind=synthetic` 来源。
 
 ```bash
 python -m tools.reconstruction prepare --workspace /absolute/workspace --bundle /absolute/workspace/local/capture/bundle-a --bundle /absolute/workspace/local/capture/bundle-b --job region-a-002

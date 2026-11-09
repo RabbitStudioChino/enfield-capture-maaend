@@ -1,6 +1,8 @@
+[CmdletBinding(PositionalBinding=$false)]
 param(
-    [ValidateSet('doctor', 'probe')][string]$Mode = 'doctor',
-    [string]$Workspace = (Join-Path $PSScriptRoot '..\..')
+    [Parameter(Position=0)][ValidateSet('doctor', 'probe', 'start', 'status', 'pause', 'stop', 'resume', 'logs', 'export')][string]$Mode = 'doctor',
+    [string]$Workspace = (Join-Path $PSScriptRoot '..\..'),
+    [Parameter(ValueFromRemainingArguments=$true)][string[]]$CaptureArgs = @()
 )
 $ErrorActionPreference = 'Stop'
 $script:PythonVersion = '3.12.10'
@@ -165,6 +167,10 @@ function Invoke-CaptureBootstrap {
         $lock = [IO.File]::Open($lockPath, [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
         $runtime = Join-Path $runtimeRoot 'python-3.12.10'
         $python = Join-Path $runtime 'tools/python.exe'
+        $needsSetup = $Mode -in @('doctor', 'probe', 'start')
+        if (-not $needsSetup -and -not [IO.File]::Exists($python)) {
+            throw 'Capture environment is missing. Run capture.cmd doctor or capture.cmd start first.'
+        }
         Assert-WorkspacePath $runtime
         if (-not [IO.Directory]::Exists($runtime)) {
             $package = Join-Path $cache 'python.3.12.10.nupkg'
@@ -188,7 +194,17 @@ function Invoke-CaptureBootstrap {
         Write-BootstrapReport
         Write-SetupLog 'Project CPython is ready. Starting the existing dependency setup and capture launcher.'
         $bootstrap = Join-Path $PSScriptRoot 'bootstrap.py'
-        & $python -B $bootstrap --command $Mode --workspace $script:WorkspaceRoot | Out-Host
+        if ($needsSetup) {
+            & $python -B $bootstrap --setup-only --workspace $script:WorkspaceRoot | Out-Host
+            if ($LASTEXITCODE -ne 0) {
+                $script:Report.child_exit_code = $LASTEXITCODE
+                $script:Report.status = 'failed'
+                return $LASTEXITCODE
+            }
+        }
+        $lock.Dispose()
+        $lock = $null
+        & $python -B $bootstrap --launch-only --command $Mode --workspace $script:WorkspaceRoot -- @CaptureArgs | Out-Host
         $code = $LASTEXITCODE
         $script:Report.child_exit_code = $code
         $script:Report.status = if ($code -eq 0) { 'complete' } else { 'failed' }

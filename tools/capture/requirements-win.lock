@@ -4,3 +4,9 @@ numpy==2.5.4 --hash=sha256:a7b1b6353e36a7e50de2973a38d705c88ee93adcf120673cee7f4
 pillow==13.0.0 --hash=sha256:ff3fe9eb621fbb9db4c4be33ab946f6bac5f98ab50ca8d3260503653656c961b
 strenum==0.5.0 --hash=sha256:f23a35daa03c948885d616463f75ebb0f179cb13acd17c3ac3b2394bfc343967
 maaagentbinary==1.0.1 --hash=sha256:d97bcc9f35b52add199b287932511ecfcddcb83930c6b532d1c7010b432ec8bf
+attrs==26.1.0 --hash=sha256:c647aa4a12dfbad9333ca4e71fe62ddc36f4e63b2d260a37a8b83d2f043ac309
+jsonschema==4.23.0 --hash=sha256:fbadb6f8b144a8f8cf9f0b89ba94501d143e50411a1278633f56a7acf7fd5566
+jsonschema-specifications==2025.9.1 --hash=sha256:98802fee3a11ee76ecaca44429fda8a41bff98b00a0f2838151b113f210cc6fe
+referencing==0.36.2 --hash=sha256:e8699adbbf8b5c7de96d8ffa0eb5c158b3beafce084968e2ea8bb08c6794dcd0
+rpds-py==0.27.1 --hash=sha256:d9199717881f13c32c4046a15f024971a3b78ad4ea029e8da6b86e5aa9cf4594
+typing-extensions==4.16.0 --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8

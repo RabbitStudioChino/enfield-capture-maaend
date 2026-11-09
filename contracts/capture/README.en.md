@@ -1,6 +1,6 @@
 # CaptureBundle 1.0
 
-This directory is the authoritative source for the capture input contract. The repository provides JSON Schema 2020-12 and a read-only offline validator. Tests and self-authored synthetic fixtures stay in the parent workspace's `local/` directory and are never committed or uploaded to GitHub. Future collectors and reconstruction consumers can integrate with this contract. Live capture and reconstruction still require implementation and acceptance testing.
+This directory is the authoritative source for the capture input contract. The repository provides JSON Schema 2020-12 and a read-only offline validator. Tests and self-authored synthetic fixtures stay in the parent workspace's `local/` directory and are never committed or uploaded to GitHub. The manually positioned task implementation is described in the [task CLI](../../docs/capture/manual-cli.en.md). Its actual Windows workflow and reconstruction quality still await acceptance testing.
 
 ## Files and Versions
 
@@ -9,11 +9,12 @@ This directory is the authoritative source for the capture input contract. The r
 | `bundle.schema.json` | `capture.bundle/1.0` | Frozen bundle entry point, provenance, and complete file hash index |
 | `session.schema.json` | `capture.session/1.0` | Session, clock anchor, provenance, controller kind, and calibration groups |
 | `plan.schema.json` | `capture.plan/1.0` | Single region, single plan revision, segments, waypoints, and camera intent |
+| `plan-manual.schema.json` | `capture.plan/1.1` | `execution_mode=manual`, null position and camera angles, `settle_required=false` |
 | `frame.schema.json` | `capture.frame/1.0` | Same-frame identity, timing, image, navigation, headings, and quality |
 | `batch.schema.json` | `capture.batch/1.0` | Committed batch, immutable frame shard, and input provenance snapshots |
 | `common.schema.json` | No standalone record version | Shared definitions for these schemas |
 
-The reader accepts only `1.0`. Unknown major versions report `unknown major`, and other versions report `unsupported schema_version`. Noncritical additional fields within the same version may be ignored. Changes to required fields or the meaning of timing, coordinates, or provenance require an explicit protocol upgrade and updated accepted versions. Schema `$id` values identify locally registered resources. The validator resolves references offline using files in this directory.
+The reader explicitly accepts plan `1.0` and manual-only `1.1`, and only `1.0` for all other records. Unknown major versions report `unknown major`, and other versions report `unsupported schema_version`. Noncritical additional fields within the same version may be ignored. Changes to required fields or the meaning of timing, coordinates, or provenance require an explicit protocol upgrade and updated accepted versions. Schema `$id` values identify locally registered resources. The validator resolves references offline using files in this directory.
 
 ## Frozen Bundle Layout
 
@@ -29,7 +30,7 @@ images/raw/<frame_id>.png
 
 The `status` in `bundle.json` must be `frozen`. Its `files` list contains every file and SHA-256 in the bundle except `bundle.json` itself, avoiding circular hashing. Paths use safe POSIX relative paths. Absolute paths, backslashes, colons, `%`, `?`, `#`, empty path components, `.`, `..`, control characters, and symlinks are forbidden. Additional files must appear in the index. Incomplete write artifacts must be excluded before export.
 
-A bundle contains one session, one `clock_id`, one region, and one plan revision. Pausing and resuming within the same process preserves the clock. Resuming after a process restart may preserve the logical task and checkpoint, but requires new `session_id`, `clock_id`, and `segment_id` values, a copied plan with updated session identity, and a separate exported bundle. Previous bundles remain independent. Future reconstruction inputs will associate multiple sessions through `input_batch_ids`. New `segment_id` values represent transitions or position discontinuities. New calibration groups represent image configuration changes. Waypoints in `plan.json` store map-pixel coordinates and camera intent. Intent values cannot serve as actual observations.
+A bundle contains one session, one `clock_id`, one region, and one plan revision. Pausing and resuming within the same process preserves the clock. Resuming after a process restart may preserve the logical task and checkpoint, but requires new `session_id`, `clock_id`, and `segment_id` values, a copied plan with updated session identity, and a separate exported bundle. Previous bundles remain independent. Future reconstruction inputs will associate multiple sessions through `input_batch_ids`. New `segment_id` values represent transitions or position discontinuities. New calibration groups represent image configuration changes. Waypoints in `capture.plan/1.0` store map-pixel coordinates and camera intent. Intent values cannot serve as actual observations. Manual-only `capture.plan/1.1` requires `execution_mode=manual`, null observation positions and camera angles, `settle_required=false`, four `not_run/null` navigation observations and a null recognition completion time. Each manual observation uses an independent segment and implies no continuous trajectory.
 
 ## Immutable Batches and Export
 
@@ -40,7 +41,7 @@ A bundle contains one session, one `clock_id`, one region, and one plan revision
 - Multiple batches may reference the same frame. Each `frame_id` is unique in the aggregate index, and every aggregate frame must be referenced by a committed batch. Passing an active session directory directly fails the frozen entry point or integrity requirements.
 - Every nonempty JSONL file must end with a newline. Each line must contain complete strict JSON. Validation rejects duplicate JSON keys, numbers outside the finite IEEE-754 range, blank records, partial records, missing files, and hash mismatches. Nanosecond strings retain integer precision.
 
-This stage provides validation. Checkpoint creation, atomic commit, frozen copying, recovery, and export execution remain for the capture implementation stage.
+Manual tasks provide checkpoints, atomic commits, frozen copies, recovery and export through the [task CLI](../../docs/capture/manual-cli.en.md). Automatic navigation and actual device acceptance are tracked separately.
 
 ## Frames, Timing, and Coordinates
 

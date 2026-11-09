@@ -12,6 +12,10 @@ from importlib.metadata import version
 from pathlib import Path
 
 
+class WorkerCancelled(RuntimeError):
+    """The coordinator cancelled an SDK request before acknowledging its result."""
+
+
 class Win32Worker:
     def __init__(self, run):
         self.run = Path(run)
@@ -41,7 +45,7 @@ class Win32Worker:
             raise
         self.pid = self.process.pid
 
-    def request(self, operation, timeout, **parameters):
+    def request(self, operation, timeout, should_cancel=None, **parameters):
         self.sequence += 1
         response = self.run / ".worker" / f"response-{self.sequence:04d}.json"
         command = {"operation": operation, "sequence": self.sequence, **parameters}
@@ -49,11 +53,15 @@ class Win32Worker:
         self.process.stdin.flush()
         deadline = time.monotonic() + timeout
         while not response.exists():
+            if should_cancel is not None and should_cancel():
+                raise WorkerCancelled(f"SDK worker {self.pid}: {operation} cancelled")
             if self.process.poll() is not None:
                 raise RuntimeError(f"SDK worker {self.pid} exited with {self.process.returncode}; see logs/worker.log")
             if time.monotonic() >= deadline:
                 raise TimeoutError(f"SDK worker {self.pid}: {operation} exceeded {timeout:g}s")
             time.sleep(0.025)
+        if should_cancel is not None and should_cancel():
+            raise WorkerCancelled(f"SDK worker {self.pid}: {operation} cancelled before confirmation")
         return json.loads(response.read_text(encoding="utf-8"))
 
     @property
