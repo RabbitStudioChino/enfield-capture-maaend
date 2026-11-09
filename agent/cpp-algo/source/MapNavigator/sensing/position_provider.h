@@ -6,6 +6,7 @@
 
 #include <MaaFramework/MaaAPI.h>
 
+#include "../../Capture/FrameCompletion.h"
 #include "../../MapLocator/MapLocator.h"
 #include "../navi_domain_types.h"
 
@@ -16,6 +17,8 @@ class PositionProvider
 {
 public:
     PositionProvider(MaaController* controller, std::shared_ptr<maplocator::MapLocator> locator, HeadingSource heading_source);
+    PositionProvider(const PositionProvider&) = delete;
+    PositionProvider& operator=(const PositionProvider&) = delete;
 
     // 位置与所配朝向都可用才返回 true
     // camera_heading_prior 以北为 0 度, 只能传上次识别到且此后没发过转向的镜头朝向
@@ -23,7 +26,7 @@ public:
         NaviPosition* out_pos,
         bool force_global_search,
         const std::string& expected_zone_id,
-        const std::vector<maplocator::SearchHint>& search_hints = {},
+        const std::vector<maplocator::SearchHint>& search_hints = { },
         std::optional<double> camera_heading_prior = std::nullopt);
     // 停车测量用, 取未平滑的定位和过了置信度检查的镜头朝向
     bool captureForStrictGoal(NaviPosition* out_pos, const std::string& expected_zone_id);
@@ -39,14 +42,18 @@ public:
     const std::string& lastLocateMessage() const;
 
     // 每次成功取位后调用一次, 把坐标换算到统一坐标系
-    void setPositionNormalizer(std::function<void(NaviPosition&)> normalizer);
+    void setPositionNormalizer(std::function<void(NaviPosition&)> normalizer, std::string normalization_id = { });
 
     // 定位前对每帧整图回调, 定位失败也会调, 跑在导航线程上须很轻
     void setFrameObserver(std::function<void(const cv::Mat&)> observer);
 
+    capture::CompletionSubscription subscribeCompletion(capture::CompletionObserver observer);
+    const capture::CaptureClock& captureClock() const;
+
 private:
     bool captureWith(NaviPosition* out_pos, maplocator::LocateOptions options, HeadingSource heading_source);
     bool waitForScreencap() const;
+    void publishCompletion(capture::FrameCompletion& completion, const cv::Mat& image) noexcept;
     void fillPosition(
         NaviPosition* out_pos,
         const maplocator::LocateResult& locate_result,
@@ -59,6 +66,10 @@ private:
     const HeadingSource heading_source_;
     std::function<void(NaviPosition&)> position_normalizer_;
     std::function<void(const cv::Mat&)> frame_observer_;
+    std::string normalization_id_;
+    const capture::CaptureClock capture_clock_ = capture::NewCaptureClock();
+    std::uint64_t capture_sequence_ = 0;
+    std::shared_ptr<capture::CompletionSlot> completion_slot_ = std::make_shared<capture::CompletionSlot>();
     // 移动端界面, 小地图位置和镜头朝向的取法都与桌面端不同
     bool adb_like_controller_ = false;
     bool last_capture_was_black_screen_ = false;

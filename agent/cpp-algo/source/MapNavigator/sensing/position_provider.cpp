@@ -1,5 +1,8 @@
+#include "position_provider.h"
+
 #include <chrono>
 #include <cmath>
+#include <stdexcept>
 
 #include <MaaUtils/Logger.h>
 
@@ -9,7 +12,6 @@
 #include "../navi_config.h"
 #include "../navi_time.h"
 #include "latency_observer.h"
-#include "position_provider.h"
 
 namespace mapnavigator
 {
@@ -111,80 +113,161 @@ bool PositionProvider::captureForStrictGoal(NaviPosition* out_pos, const std::st
 
 bool PositionProvider::captureWith(NaviPosition* out_pos, maplocator::LocateOptions options, HeadingSource heading_source)
 {
-    if (out_pos == nullptr) {
-        return false;
+    // buffer 必须比完成回调活得更久，回调返回前 image 仍借用其内存。
+    std::optional<ScopedImageBuffer> buffer;
+    cv::Mat image;
+    capture::FrameCompletion completion;
+    completion.clock = capture_clock_;
+    completion.frame_id = capture_clock_.session_id + "-" + std::to_string(++capture_sequence_);
+    completion.request_monotonic_ns = capture::MonotonicNowNs();
+    completion.heading_source = heading_source;
+    if (position_normalizer_ && !normalization_id_.empty()) {
+        completion.normalization_id = normalization_id_;
     }
+    const auto perform_capture = [&]() -> bool {
+        completion.outcome = "invalid_output";
+        if (out_pos == nullptr) {
+            return false;
+        }
 
-    out_pos->valid = false;
-    last_capture_was_black_screen_ = false;
-    last_capture_minimap_absent_ = false;
-    last_locate_message_ = "screencap failed";
-    const auto capture_started_at = std::chrono::steady_clock::now();
+        out_pos->valid = false;
+        last_capture_was_black_screen_ = false;
+        last_capture_minimap_absent_ = false;
+        last_locate_message_ = "screencap failed";
+        const auto capture_started_at = std::chrono::steady_clock::now();
 
-    if (!waitForScreencap()) {
-        return false;
-    }
-    ScopedImageBuffer buffer;
+        completion.outcome = "screencap_failed";
+        const bool screenshot_ready = waitForScreencap();
+        completion.screencap_completed_monotonic_ns = capture::MonotonicNowNs();
+        if (!screenshot_ready) {
+            return false;
+        }
+        buffer.emplace();
+        completion.outcome = "image_unavailable";
 
-    if (!MaaControllerCachedImage(controller_, buffer.Get()) || MaaImageBufferIsEmpty(buffer.Get())) {
-        return false;
-    }
-    const auto screencap_done_at = std::chrono::steady_clock::now();
+        if (!MaaControllerCachedImage(controller_, buffer->Get()) || MaaImageBufferIsEmpty(buffer->Get())) {
+            return false;
+        }
+        const auto screencap_done_at = std::chrono::steady_clock::now();
 
-    cv::Mat image = to_mat(buffer.Get());
-    last_capture_was_black_screen_ = is_black_screen(image);
-    if (options.precise_position && last_capture_was_black_screen_) {
-        last_locate_message_ = "black screen";
-        return false;
-    }
-    if (frame_observer_) {
-        frame_observer_(image);
-    }
-    cv::Mat minimap;
-    if (!maplocator::TryExtractMinimap(image, adb_like_controller_, &minimap)) {
-        last_locate_message_ = "minimap not extracted";
-        return false;
-    }
-    const auto image_prep_done_at = std::chrono::steady_clock::now();
+        image = to_mat(buffer->Get());
+        last_capture_was_black_screen_ = is_black_screen(image);
+        if (options.precise_position && last_capture_was_black_screen_) {
+            completion.outcome = "black_screen";
+            last_locate_message_ = "black screen";
+            return false;
+        }
+        if (frame_observer_) {
+            frame_observer_(image);
+        }
+        cv::Mat minimap;
+        if (!maplocator::TryExtractMinimap(image, adb_like_controller_, &minimap)) {
+            completion.outcome = "minimap_unavailable";
+            last_locate_message_ = "minimap not extracted";
+            return false;
+        }
+        const auto image_prep_done_at = std::chrono::steady_clock::now();
 
-    options.reject_occluded_frames = heading_source != HeadingSource::Camera;
-    const auto locate_result = locator_->locate(minimap, options);
-    const auto locate_done_at = std::chrono::steady_clock::now();
-    log_locate_result(locate_result);
-    last_capture_minimap_absent_ = locate_result.minimap_absent;
-    last_locate_message_ = locate_result.debugMessage;
-    if (locate_result.status != maplocator::LocateStatus::Success || !locate_result.position) {
-        return false;
-    }
+        options.reject_occluded_frames = heading_source != HeadingSource::Camera;
+        completion.locate_started_monotonic_ns = capture::MonotonicNowNs();
+        const auto locate_result = locator_->locate(minimap, options);
+        completion.locate_completed_monotonic_ns = capture::MonotonicNowNs();
+        completion.locate_result = locate_result;
+        const auto locate_done_at = std::chrono::steady_clock::now();
+        log_locate_result(locate_result);
+        last_capture_minimap_absent_ = locate_result.minimap_absent;
+        last_locate_message_ = locate_result.debugMessage;
+        completion.outcome = "localization_failed";
+        if (locate_result.status != maplocator::LocateStatus::Success || !locate_result.position) {
+            return false;
+        }
 
-    if (options.precise_position
-        && (!std::isfinite(locate_result.position->x) || !std::isfinite(locate_result.position->y)
-            || !std::isfinite(locate_result.position->score) || locate_result.position->score < options.loc_threshold)) {
-        last_locate_message_ = "precise position rejected";
-        return false;
-    }
+        if (options.precise_position
+            && (!std::isfinite(locate_result.position->x) || !std::isfinite(locate_result.position->y)
+                || !std::isfinite(locate_result.position->score) || locate_result.position->score < options.loc_threshold)) {
+            completion.outcome = "precise_position_rejected";
+            last_locate_message_ = "precise position rejected";
+            return false;
+        }
 
-    const std::optional<double> confident_camera = confident_camera_heading(locate_result);
-    const std::optional<double> heading = heading_source == HeadingSource::Camera ? confident_camera : locate_result.rot;
-    if (!heading || !std::isfinite(*heading) || *heading < 0.0 || *heading >= 360.0) {
-        last_locate_message_ = "heading unavailable";
-        return false;
-    }
+        const std::optional<double> confident_camera = confident_camera_heading(locate_result);
+        const std::optional<double> heading = heading_source == HeadingSource::Camera ? confident_camera : locate_result.rot;
+        if (!heading || !std::isfinite(*heading) || *heading < 0.0 || *heading >= 360.0) {
+            completion.outcome = "heading_unavailable";
+            last_locate_message_ = "heading unavailable";
+            return false;
+        }
 
-    // 全局搜索本就更慢, 不计入耗时统计
-    if (!options.force_global_search) {
-        latency::RecordStage(latency::Stage::Screencap, ElapsedMs(capture_started_at, screencap_done_at));
-        latency::RecordStage(latency::Stage::ImagePrep, ElapsedMs(screencap_done_at, image_prep_done_at));
-        latency::RecordStage(latency::Stage::Locate, ElapsedMs(image_prep_done_at, locate_done_at));
-    }
+        // 全局搜索本就更慢, 不计入耗时统计
+        if (!options.force_global_search) {
+            latency::RecordStage(latency::Stage::Screencap, ElapsedMs(capture_started_at, screencap_done_at));
+            latency::RecordStage(latency::Stage::ImagePrep, ElapsedMs(screencap_done_at, image_prep_done_at));
+            latency::RecordStage(latency::Stage::Locate, ElapsedMs(image_prep_done_at, locate_done_at));
+        }
 
-    fillPosition(out_pos, locate_result, *heading, confident_camera, capture_started_at);
+        fillPosition(out_pos, locate_result, *heading, confident_camera, capture_started_at);
+        // floor_y 属于导航状态，本帧定位没有测量高度。
+        completion.position_before_normalization = *out_pos;
+        completion.position_before_normalization->floor_y.reset();
 
-    // 所有取位都经过这里, 且 out_pos 刚由本次定位结果填好, 换算每次恰好一次
-    if (position_normalizer_) {
-        position_normalizer_(*out_pos);
+        // 所有取位都经过这里, 且 out_pos 刚由本次定位结果填好, 换算每次恰好一次
+        if (position_normalizer_) {
+            position_normalizer_(*out_pos);
+        }
+        completion.position_after_normalization = *out_pos;
+        completion.position_after_normalization->floor_y.reset();
+        completion.outcome = "complete";
+        return true;
+    };
+    try {
+        completion.navigation_valid = perform_capture();
+        completion.reason = out_pos == nullptr ? "output position is null" : last_locate_message_;
     }
-    return true;
+    catch (const std::exception& error) {
+        completion.outcome = "exception";
+        completion.reason = error.what();
+        publishCompletion(completion, image);
+        throw;
+    }
+    catch (...) {
+        completion.outcome = "exception";
+        completion.reason = "unknown capture exception";
+        publishCompletion(completion, image);
+        throw;
+    }
+    publishCompletion(completion, image);
+    return completion.navigation_valid;
+}
+
+capture::CompletionSubscription PositionProvider::subscribeCompletion(capture::CompletionObserver observer)
+{
+    if (!observer || completion_slot_->observer) {
+        throw std::logic_error("PositionProvider requires one nonempty completion subscriber");
+    }
+    completion_slot_->observer = std::move(observer);
+    return capture::CompletionSubscription(completion_slot_);
+}
+
+const capture::CaptureClock& PositionProvider::captureClock() const
+{
+    return capture_clock_;
+}
+
+void PositionProvider::publishCompletion(capture::FrameCompletion& completion, const cv::Mat& image) noexcept
+{
+    completion.completed_monotonic_ns = capture::MonotonicNowNs();
+    try {
+        const auto observer = completion_slot_->observer;
+        if (observer) {
+            observer(completion, image);
+        }
+    }
+    catch (const std::exception& error) {
+        LogError << "Capture completion subscriber failed." << error.what();
+    }
+    catch (...) {
+        LogError << "Capture completion subscriber failed with an unknown exception.";
+    }
 }
 
 bool PositionProvider::waitForScreencap() const
@@ -220,9 +303,10 @@ void PositionProvider::fillPosition(
     out_pos->timestamp = captured_at;
 }
 
-void PositionProvider::setPositionNormalizer(std::function<void(NaviPosition&)> normalizer)
+void PositionProvider::setPositionNormalizer(std::function<void(NaviPosition&)> normalizer, std::string normalization_id)
 {
     position_normalizer_ = std::move(normalizer);
+    normalization_id_ = std::move(normalization_id);
 }
 
 bool PositionProvider::waitForFix(

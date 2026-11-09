@@ -10,6 +10,7 @@
 #include <MaaFramework/MaaAPI.h>
 #include <MaaUtils/Logger.h>
 
+#include "../Capture/PassiveRecorder.h"
 #include "../MapLocator/MapLocateAction.h"
 #include "control/action_wrapper.h"
 #include "control/motion_controller.h"
@@ -125,13 +126,21 @@ bool NaviController::navigate(const NaviParam& requested_param)
         return false;
     }
 
-    const auto is_stopping = [&]() {
-        return MaaTaskerStopping(MaaContextGetTasker(ctx_));
-    };
-
     if (param.path.empty()) {
         return true;
     }
+
+    std::unique_ptr<capture::PassiveRecorder> recorder;
+    try {
+        recorder = capture::AttachPassiveRecorder(position_provider);
+    }
+    catch (const std::exception& error) {
+        LogError << "Native capture attachment failed." << error.what();
+        return false;
+    }
+    const auto is_stopping = [&]() {
+        return (recorder && recorder->failed()) || MaaTaskerStopping(MaaContextGetTasker(ctx_));
+    };
 
     const size_t target_count = param.path.size();
     LogInfo << "Starting navigation to targets." << VAR(target_count);
@@ -155,7 +164,7 @@ bool NaviController::navigate(const NaviParam& requested_param)
         return false;
     }
     if (expanded_path.empty()) {
-        return true;
+        return !recorder || recorder->stop();
     }
 
     NaviParam expanded_param = param;
@@ -179,7 +188,9 @@ bool NaviController::navigate(const NaviParam& requested_param)
         is_stopping,
         ctx_);
 
-    return state_machine.run();
+    const bool succeeded = state_machine.run();
+    const bool recording_ok = !recorder || recorder->stop();
+    return succeeded && recording_ok;
 }
 
 } // namespace mapnavigator
