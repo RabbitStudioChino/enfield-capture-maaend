@@ -98,8 +98,22 @@ def main():
     parser.add_argument("--workspace", type=Path, default=SOURCE_ROOT)
     parser.add_argument(
         "--command",
-        choices=("doctor", "probe", "start", "status", "pause", "stop", "resume", "logs", "export"),
-        default="doctor",
+        choices=(
+            "doctor",
+            "probe",
+            "start",
+            "auto",
+            "serve",
+            "regions",
+            "list",
+            "status",
+            "pause",
+            "stop",
+            "resume",
+            "logs",
+            "export",
+        ),
+        default="serve",
     )
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--setup-only", action="store_true")

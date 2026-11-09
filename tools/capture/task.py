@@ -125,7 +125,7 @@ def task_path(workspace, task, create=False):
     return check_path(parent / valid_id(task))
 
 
-def create_task(workspace, task, count, interval, region_label):
+def create_task(workspace, task, count, interval, region_label, metadata=None):
     require(type(count) is int and 1 <= count <= 10000, "count must be between 1 and 10000")
     require(isinstance(interval, (int, float)) and 0.25 <= interval <= 3600, "interval must be between 0.25 and 3600")
     require(isinstance(region_label, str) and bool(region_label.strip()), "region label is required")
@@ -159,6 +159,8 @@ def create_task(workspace, task, count, interval, region_label):
             "No navigation, pose, FOV, image freshness or geometric quality is measured.",
         },
     }
+    if metadata is not None:
+        record.update(metadata)
     write_json(root / "task.json", record)
     write_json(
         root / "checkpoint.json",
@@ -202,7 +204,8 @@ def session_data(root, task, validators):
         plan["region_id"] == task["region_id"] and plan["map_coordinates"] == task["map_coordinates"],
         "task region changed",
     )
-    require(plan["schema_version"] == "capture.plan/1.1", "task requires a manual plan")
+    expected_plan = "capture.plan/1.0" if task.get("execution_mode") == "auto" else "capture.plan/1.1"
+    require(plan["schema_version"] == expected_plan, "task plan execution mode mismatch")
     identity = {key: session[key] for key in ("session_id", "clock", "source", "controller_kind")}
     frames, files, batch_uris = {}, {}, []
     indices = set()
@@ -230,12 +233,10 @@ def session_data(root, task, validators):
             "invalid frame shard",
         )
         shard = read_frames(contents[shard_uri], validators, shard_uri)
-        require(len(shard) == 1 and list(shard) == batch["frame_ids"], "manual batch must contain exactly one frame")
+        require(len(shard) == 1 and list(shard) == batch["frame_ids"], "capture batch must contain exactly one frame")
         frame = next(iter(shard.values()))
-        require(
-            frame["frame_id"] not in frames and frame["image"]["status"] == "captured", "invalid committed manual frame"
-        )
-        require(frame["quality"]["selection_status"] == "pending", "manual image quality must remain pending")
+        require(frame["frame_id"] not in frames and frame["image"]["status"] == "captured", "invalid committed frame")
+        require(frame["quality"]["selection_status"] == "pending", "capture image quality must remain pending")
         require(set(indexed) == {"plan.json", shard_uri, frame["image"]["uri"]}, "batch file coverage mismatch")
         require(batch["calibration_groups"] == session["calibration_groups"], "immutable calibration mismatch")
         match = re.fullmatch(r"point-([0-9]{5})", frame["waypoint_id"])
@@ -332,11 +333,6 @@ class TaskRunner:
         self.validators = make_validators()
         self.next_index = recover(root, task, self.validators)
         require(self.next_index < task["count"], "task is already completed")
-        self.session_id = "session-" + uuid.uuid4().hex
-        self.session_root = root / "sessions" / self.session_id
-        self.session_root.mkdir()
-        for directory in ("images", "images/raw", "records", "batches"):
-            (self.session_root / directory).mkdir()
         self.worker = None
         self.worker_root = None
         self.worker_index = 0
@@ -348,26 +344,7 @@ class TaskRunner:
             "monotonic_anchor_ns": str(time.monotonic_ns()),
             "utc_uncertainty_ns": None,
         }
-        self.plan = {
-            "schema_version": "capture.plan/1.1",
-            "execution_mode": "manual",
-            "plan_id": "plan-" + uuid.uuid4().hex,
-            "revision": 1,
-            "session_id": self.session_id,
-            "region_id": task["region_id"],
-            "map_coordinates": task["map_coordinates"],
-            "waypoints": [
-                {
-                    "waypoint_id": f"point-{index + 1:05d}",
-                    "segment_id": f"segment-{self.session_id}-{index + 1:05d}",
-                    "position_xy": None,
-                    "camera_intent": {"yaw_degrees": None, "pitch_degrees": None, "settle_required": False},
-                }
-                for index in range(self.next_index, task["count"])
-            ],
-        }
-        check_record(self.validators, "plan", self.plan, "manual plan")
-        write_json(self.session_root / "plan.json", self.plan)
+        self.new_session()
         self.checkpoint = {
             "schema_version": "capture.checkpoint/1.0",
             "task_id": root.name,
@@ -379,6 +356,46 @@ class TaskRunner:
             "error": None,
         }
         self.save()
+
+    def new_session(self):
+        self.session_id = "session-" + uuid.uuid4().hex
+        self.session_root = self.root / "sessions" / self.session_id
+        self.session_root.mkdir()
+        for directory in ("images", "images/raw", "records", "batches"):
+            (self.session_root / directory).mkdir()
+        self.session = None
+        self.plan = {
+            "schema_version": "capture.plan/1.1",
+            "execution_mode": "manual",
+            "plan_id": "plan-" + uuid.uuid4().hex,
+            "revision": 1,
+            "session_id": self.session_id,
+            "region_id": self.task["region_id"],
+            "map_coordinates": self.task["map_coordinates"],
+            "waypoints": [
+                {
+                    "waypoint_id": f"point-{index + 1:05d}",
+                    "segment_id": f"segment-{self.session_id}-{index + 1:05d}",
+                    "position_xy": None,
+                    "camera_intent": {"yaw_degrees": None, "pitch_degrees": None, "settle_required": False},
+                }
+                for index in range(self.next_index, self.task["count"])
+            ],
+        }
+        if self.task.get("execution_mode") == "auto":
+            self.plan["schema_version"] = "capture.plan/1.0"
+            self.plan.pop("execution_mode")
+            for waypoint, target in zip(
+                self.plan["waypoints"], self.task["auto_plan"]["waypoints"][self.next_index :], strict=True
+            ):
+                waypoint["position_xy"] = target["position_xy"]
+                waypoint["camera_intent"] = {
+                    "yaw_degrees": target["yaw_degrees"],
+                    "pitch_degrees": None,
+                    "settle_required": True,
+                }
+        check_record(self.validators, "plan", self.plan, "capture plan")
+        write_json(self.session_root / "plan.json", self.plan)
 
     def save(self, state=None, error=None):
         if state is not None:
@@ -519,15 +536,6 @@ class TaskRunner:
         image, path = self.checked_image(record)
         frame_id = "frame-" + uuid.uuid4().hex
         image_uri = f"images/raw/{frame_id}.png"
-        target = self.session_root / image_uri
-        temporary = target.with_suffix(".png.partial")
-        with path.open("rb") as reader, temporary.open("xb") as writer:
-            shutil.copyfileobj(reader, writer, 1024 * 1024)
-            writer.flush()
-            os.fsync(writer.fileno())
-        read_verified(temporary, image["sha256"], False)
-        require(not target.exists(), "refusing to overwrite a raw image")
-        temporary.rename(target)
         waypoint = next(
             item for item in self.plan["waypoints"] if item["waypoint_id"] == f"point-{self.next_index + 1:05d}"
         )
@@ -566,6 +574,22 @@ class TaskRunner:
             "quality": {"selection_status": "pending", "rejection_reasons": []},
         }
         frame["image"].update(uri=image_uri, backend="MaaFramework/ScreenDC")
+        self.persist_frame(frame, path)
+
+    def persist_frame(self, frame, path):
+        frame_id = frame["frame_id"]
+        image = frame["image"]
+        image_uri = f"images/raw/{frame_id}.png"
+        require(image["uri"] == image_uri, "unexpected committed image path")
+        target = self.session_root / image_uri
+        temporary = target.with_suffix(".png.partial")
+        with path.open("rb") as reader, temporary.open("xb") as writer:
+            shutil.copyfileobj(reader, writer, 1024 * 1024)
+            writer.flush()
+            os.fsync(writer.fileno())
+        read_verified(temporary, image["sha256"], False)
+        require(not target.exists(), "refusing to overwrite a raw image")
+        temporary.rename(target)
         check_record(self.validators, "frame", frame, "capture frame")
         shard_uri = f"records/{frame_id}.frames.jsonl"
         atomic_bytes(
@@ -599,15 +623,21 @@ class TaskRunner:
         self.event("committed", frame_id=frame_id)
         print(f"{self.next_index}/{self.task['count']} committed; geometric quality pending", flush=True)
 
+    def capture_next(self):
+        self.worker_index += 1
+        return self.worker.request("capture", timeout=12, index=self.worker_index, should_cancel=self.should_cancel)
+
     def run(self, kickoff=None):
         print(
             f"Task: {self.root.name}  Session: {self.session_id}  Generation: {self.checkpoint['generation']}",
             flush=True,
         )
-        print(
-            f"Switch to Endfield within {max(0, self.deadline - time.monotonic()):g}s. Move and aim manually. Ctrl+C stops.",
-            flush=True,
+        description = (
+            "Automatic navigation and photography"
+            if self.task.get("execution_mode") == "auto"
+            else "Move and aim manually"
         )
+        print(f"{description}. Starting in {max(0, self.deadline - time.monotonic()):g}s. Ctrl+C stops.", flush=True)
         if kickoff:
             acknowledge(self.root, kickoff, "applied", self.checkpoint)
         code = 0
@@ -630,10 +660,7 @@ class TaskRunner:
                     if self.worker is None:
                         self.preflight()
                         continue
-                    self.worker_index += 1
-                    record = self.worker.request(
-                        "capture", timeout=12, index=self.worker_index, should_cancel=self.should_cancel
-                    )
+                    record = self.capture_next()
                     self.event("attempt", result=record)
                     self.commit(record)
                     self.deadline = time.monotonic() + self.task["interval_seconds"]
@@ -655,6 +682,8 @@ class TaskRunner:
                 self.close_worker()
             self.save("failed", f"{type(error).__name__}: {error}")
             self.event("failed", error=self.checkpoint["error"])
+            for command in self.pending():
+                acknowledge(self.root, command, "rejected", self.checkpoint, self.checkpoint["error"])
             code = 1
         finally:
             self.close_worker()
@@ -688,7 +717,13 @@ def control(
                 with exclusive(root.parent / ".controller.lock"):
                     if recover(root, load_task(root), make_validators()) == load_task(root)["count"]:
                         return acknowledge(root, command, "rejected", checkpoint, "task is already completed")
-                    runner = TaskRunner(root, load_task(root), worker_type, start_delay)
+                    task_record = load_task(root)
+                    if task_record.get("execution_mode") == "auto":
+                        from .auto_task import AutoTaskRunner
+
+                        runner = AutoTaskRunner(root, task_record, start_delay)
+                    else:
+                        runner = TaskRunner(root, task_record, worker_type, start_delay)
                     code = runner.run(kickoff=command)
                     return {**read_json(ack_path), "run_exit_code": code}
             except BlockingIOError:

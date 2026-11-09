@@ -16,7 +16,37 @@ class WorkerCancelled(RuntimeError):
     """The coordinator cancelled an SDK request before acknowledging its result."""
 
 
+def release_game_inputs(window):
+    """Best-effort targeted releases after an automatic worker had to be killed."""
+    if sys.platform != "win32" or not window:
+        return False
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    user32.IsWindow.argtypes = [wintypes.HWND]
+    user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+    user32.GetClassNameW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+    user32.PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+    user32.PostMessageW.restype = wintypes.BOOL
+    hwnd = int(window["hwnd"], 16)
+    pid = wintypes.DWORD()
+    class_name = ctypes.create_unicode_buffer(256)
+    user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+    user32.GetClassNameW(hwnd, class_name, len(class_name))
+    if not user32.IsWindow(hwnd) or pid.value != window["pid"] or class_name.value != "UnityWndClass":
+        return False
+    succeeded = True
+    for key in (ord("W"), ord("A"), ord("S"), ord("D"), ord("F"), 0x10, 0x11, 0x12, 0x20):
+        succeeded = bool(user32.PostMessageW(hwnd, 0x0101, key, 0xC0000001)) and succeeded
+    for message in (0x0202, 0x0205, 0x0208):
+        succeeded = bool(user32.PostMessageW(hwnd, message, 0, 0)) and succeeded
+    return succeeded
+
+
 class Win32Worker:
+    worker_module = "tools.capture.win32_adapter"
+
     def __init__(self, run):
         self.run = Path(run)
         self.sequence = 0
@@ -32,7 +62,7 @@ class Win32Worker:
         )
         try:
             self.process = subprocess.Popen(
-                [sys.executable, "-m", "tools.capture.win32_adapter", str(self.run)],
+                [sys.executable, "-m", self.worker_module, str(self.run)],
                 stdin=subprocess.PIPE,
                 stdout=self.log,
                 stderr=subprocess.STDOUT,
@@ -46,6 +76,8 @@ class Win32Worker:
         self.pid = self.process.pid
 
     def request(self, operation, timeout, should_cancel=None, **parameters):
+        if should_cancel is not None and should_cancel():
+            raise WorkerCancelled(f"SDK worker {self.pid}: {operation} cancelled before dispatch")
         self.sequence += 1
         response = self.run / ".worker" / f"response-{self.sequence:04d}.json"
         command = {"operation": operation, "sequence": self.sequence, **parameters}
@@ -83,12 +115,14 @@ class Win32Worker:
 
 
 class WindowsAdapter:
-    def __init__(self, run):
+    def __init__(self, run, input_enabled=False, activate_window=False):
         self.run = run
         self.controller = None
         self.window = None
         self.last_window = None
         self.initial_size = None
+        self.input_enabled = input_enabled
+        self.activate_window = activate_window
 
     def initialize(self):
         result = {"connected": False, "candidates": [], "sdk_version": None, "raw_size_enabled": False}
@@ -105,6 +139,10 @@ class WindowsAdapter:
             self.user32 = ctypes.WinDLL("user32", use_last_error=True)
             self.user32.GetForegroundWindow.restype = wintypes.HWND
             self.user32.GetForegroundWindow.argtypes = []
+            self.user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
+            self.user32.ShowWindow.restype = wintypes.BOOL
+            self.user32.SetForegroundWindow.argtypes = [wintypes.HWND]
+            self.user32.SetForegroundWindow.restype = wintypes.BOOL
             for name in ("IsWindow", "IsIconic", "IsWindowVisible"):
                 function = getattr(self.user32, name)
                 function.argtypes = [wintypes.HWND]
@@ -141,6 +179,11 @@ class WindowsAdapter:
                 raise RuntimeError("Exactly one UnityWndClass window with Endfield in its title is required")
             self.window = result["candidates"][0]
             self.hwnd = int(self.window["hwnd"], 16)
+            if self.activate_window:
+                if (self.run / ".worker/stop.json").exists():
+                    raise RuntimeError("Capture was stopped before game activation")
+                self.user32.ShowWindow(self.hwnd, 9)
+                self.user32.SetForegroundWindow(self.hwnd)
             self.check_window()
             from maa.controller import Win32Controller
             from maa.define import MaaWin32InputMethodEnum, MaaWin32ScreencapMethodEnum
@@ -153,8 +196,8 @@ class WindowsAdapter:
             self.controller = Win32Controller(
                 hWnd=self.hwnd,
                 screencap_method=MaaWin32ScreencapMethodEnum.ScreenDC,
-                mouse_method=MaaWin32InputMethodEnum.Null,
-                keyboard_method=MaaWin32InputMethodEnum.Null,
+                mouse_method=MaaWin32InputMethodEnum.Seize if self.input_enabled else MaaWin32InputMethodEnum.Null,
+                keyboard_method=MaaWin32InputMethodEnum.Seize if self.input_enabled else MaaWin32InputMethodEnum.Null,
             )
             if not self.controller.set_screenshot_use_raw_size(True):
                 raise RuntimeError("MaaFramework rejected the raw screenshot size option")

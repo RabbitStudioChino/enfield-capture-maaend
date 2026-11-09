@@ -1,6 +1,6 @@
 [CmdletBinding(PositionalBinding=$false)]
 param(
-    [Parameter(Position=0)][ValidateSet('doctor', 'probe', 'start', 'status', 'pause', 'stop', 'resume', 'logs', 'export')][string]$Mode = 'doctor',
+    [Parameter(Position=0)][ValidateSet('doctor', 'probe', 'start', 'auto', 'serve', 'regions', 'list', 'status', 'pause', 'stop', 'resume', 'logs', 'export')][string]$Mode = 'serve',
     [string]$Workspace = (Join-Path $PSScriptRoot '..\..'),
     [Parameter(ValueFromRemainingArguments=$true)][string[]]$CaptureArgs = @()
 )
@@ -164,10 +164,12 @@ function Invoke-CaptureBootstrap {
         $env:PYTHONUTF8 = '1'
         $lockPath = Join-Path $runtimeRoot 'capture-bootstrap.lock'
         Assert-WorkspacePath $lockPath
-        $lock = [IO.File]::Open($lockPath, [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+        $needsSetup = $Mode -in @('doctor', 'probe', 'start', 'auto', 'serve', 'regions', 'list')
+        if ($needsSetup) {
+            $lock = [IO.File]::Open($lockPath, [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+        }
         $runtime = Join-Path $runtimeRoot 'python-3.12.10'
         $python = Join-Path $runtime 'tools/python.exe'
-        $needsSetup = $Mode -in @('doctor', 'probe', 'start')
         if (-not $needsSetup -and -not [IO.File]::Exists($python)) {
             throw 'Capture environment is missing. Run capture.cmd doctor or capture.cmd start first.'
         }
@@ -202,8 +204,10 @@ function Invoke-CaptureBootstrap {
                 return $LASTEXITCODE
             }
         }
-        $lock.Dispose()
-        $lock = $null
+        if ($lock) {
+            $lock.Dispose()
+            $lock = $null
+        }
         & $python -B $bootstrap --launch-only --command $Mode --workspace $script:WorkspaceRoot -- @CaptureArgs | Out-Host
         $code = $LASTEXITCODE
         $script:Report.child_exit_code = $code
