@@ -1,0 +1,6 @@
+# Python 3.12 x64 on Windows. PyPI wheels verified against release metadata.
+maafw==5.14.3 --hash=sha256:5fcd48d85b2110150f19848da777564abe64e4ca64966704cb8dec948d243ce5
+numpy==2.5.4 --hash=sha256:a7b1b6353e36a7e50de2973a38d705c88ee93adcf120673cee7f45a4a3fa223a
+pillow==13.0.0 --hash=sha256:ff3fe9eb621fbb9db4c4be33ab946f6bac5f98ab50ca8d3260503653656c961b
+strenum==0.5.0 --hash=sha256:f23a35daa03c948885d616463f75ebb0f179cb13acd17c3ac3b2394bfc343967
+maaagentbinary==1.0.1 --hash=sha256:d97bcc9f35b52add199b287932511ecfcddcb83930c6b532d1c7010b432ec8bf

@@ -1,0 +1,85 @@
+# Windows 有限截图验证
+
+本文说明 M0/C01 的 Windows 连接与有限截图探针。当前实现需要用户在 Windows 实机验收。结果使用 `capture.probe/1.0` 诊断格式，导航与相机位姿均为 `null`，正式 `CaptureBundle` 由后续同帧定位与采集流程生成。
+
+## 环境准备
+
+- 使用 Windows 10 或 Windows 11，安装 Python 3.12 x64。
+- 手动启动游戏并进入可自由观察的场景，保持唯一标题包含 `Endfield`、窗口类为 `UnityWndClass` 的游戏窗口。
+- 关闭 Windows HDR 与自动颜色管理，固定游戏分辨率与显示缩放。保持窗口可见、未最小化且位于前台，整个窗口完整位于显示器内，避免覆盖弹窗。
+- 采集进程与游戏使用相同权限等级。遇到权限错误时按报告确认游戏与终端的权限配置，再由用户重新启动对应程序。
+- 将最小源码 ZIP 解压到普通本地目录，例如 `D:\EndfieldCapture`。目录及其 `local` 子目录应为真实目录，避免符号链接或 NTFS junction。
+
+探针只连接已经运行的游戏，输入方式固定为 `Null`，用户自行移动角色和镜头。连接和截图运行在独立 SDK 子进程中，发生超时或 Ctrl+C 后回收该子进程。`ScreenDC` 内部可能恢复游戏前台或移动窗口，前台与最小化检查只在检查边界生效，截图期间仍存在竞态。
+
+## 一键运行
+
+1. 双击 `scripts\capture\capture.cmd`，默认运行 `doctor`。它会在解压目录的 `local\envs\capture-windows-py312` 创建独立环境，并按锁文件下载依赖。安装日志与报告留在 `local\validation\windows-capture\<run-id>`。
+2. 安装结束后出现 5 秒倒计时，立即切回游戏并保持前台。`doctor` 检查系统、Python、SDK 版本、候选窗口、连接与一张原尺寸截图。
+3. 打开命令提示符并切换到解压目录，运行以下命令。出现倒计时后切回游戏，约每两秒手动换一个观察方向或位置，采集 12 次。
+
+```bat
+scripts\capture\capture.cmd probe
+```
+
+PowerShell 环境允许运行本地脚本时，也可使用以下命令。若策略阻止 `.ps1`，使用上述 `.cmd` 入口。脚本沿用系统执行策略和当前进程权限。
+
+```powershell
+.\scripts\capture\capture.ps1 -Mode doctor
+.\scripts\capture\capture.ps1 -Mode probe
+```
+
+## 命令行参数
+
+完成本地依赖安装后，可直接调用独立环境。以下示例中的工作区为解压目录，输出固定进入该目录的 `local` 子目录。
+
+```bat
+local\envs\capture-windows-py312\Scripts\python.exe -m tools.capture doctor --workspace .
+local\envs\capture-windows-py312\Scripts\python.exe -m tools.capture probe --workspace . --count 12 --interval 2 --start-delay 5
+```
+
+`count` 范围为 1–60，`interval` 范围为 0.25–30 秒，`start-delay` 范围为 0–60 秒。`doctor` 固定等待 5 秒并尝试一帧。间隔从上次尝试结束开始计算，整体耗时还包含连接、截图和写盘时间。控制台按 Ctrl+C 可以结束当前运行，已写入的记录保留，进行中的尝试记录为失败或中断。
+
+## 检查与返回结果
+
+每次运行使用新的时间戳与随机标识目录，保留旧结果。依赖安装报告和采集报告可能分别占用一个目录。
+
+```text
+local/validation/windows-capture/<run-id>/
+  report.json
+  frames.jsonl
+  images/frame-000001.png
+  logs/worker.log
+  sdk/
+  .worker/
+```
+
+- 打开成功帧 PNG，确认画面完整、颜色正常、确实来自目标游戏，宽高符合当时的游戏客户区设置。报告中记录 SDK 原始分辨率和 `raw_size_enabled`，探针要求返回尺寸与 SDK 原始分辨率一致。
+- 查看 `report.json` 的 `status`、`connection`、`errors`、`attempted`、`captured`、`failed` 和 `worker`。截图记录包含相对路径、SHA-256、宽高、时钟与独立失败原因。
+- 手动改变视角后应看到不同画面。重复内容会计入 `duplicate_images`，帧内记录 `duplicate_of_frame_id`。静止场景也可能产生相同图片，需结合实际操作判断。
+- 分别检查游戏失焦、最小化及 Ctrl+C 的情况。在检查时观察到失焦和最小化应产生拒绝或失败记录，SDK 内部仍可能先恢复前台或调整窗口，需一并记录实际现象。超时与中断后 `worker.returncode` 应存在。未完整写完的 `.partial` 文件排除在成功帧之外。
+- 把本次 `local\validation\windows-capture` 下相关完整运行目录压缩返回。Mac 接收位置为工作区根目录的 `local/validation/windows-capture/`，保留 `run-id`。包含失败报告与日志的目录同样需要返回。
+
+正常全部成功退出码为 `0`，部分成功或失败为 `1`，参数错误为 `2`，用户中断为 `130`。磁盘不可写时控制台会显示报告写入失败，保留控制台错误文本供排查。
+
+## 失败处理
+
+| 现象 | 返回内容与处理 |
+| --- | --- |
+| Python 缺失或版本不符 | 查看 `capture.probe.bootstrap/1.0` 安装报告，安装 Python 3.12 x64 后重新运行 |
+| 依赖下载或哈希验证失败 | 保留安装报告与 `logs/install.log`，确认网络后重新运行 |
+| SDK 缺失、版本错误或 DLL 加载失败 | 返回报告中的包版本、连接错误与 `logs/worker.log` |
+| 游戏窗口为零个或多个 | 返回候选窗口列表，确认游戏正在运行且只有一个匹配窗口 |
+| 失焦、最小化或窗口身份变化 | 回到游戏前台并恢复窗口，再开始新的运行 |
+| 黑屏、空图或尺寸变化 | 返回失败帧原因，确认 HDR、窗口状态与固定分辨率后重新运行 |
+| 连接或截图超时 | 保留报告和工作进程日志，由报告确认 PID、退出原因与退出码 |
+
+## SDK 与来源依据
+
+锁文件固定 `maafw==5.14.3`、`numpy==2.5.4`、`pillow==13.0.0`、`strenum==0.5.0` 和 `maaagentbinary==1.0.1`，使用 Windows Python 3.12 x64 wheel 哈希。5.14.3 Windows x64 wheel 的 SHA-256 为 `5fcd48d85b2110150f19848da777564abe64e4ca64966704cb8dec948d243ce5`，与上游 `uv.lock` 及 PyPI 发布元数据一致。[PyPI 发布元数据](https://pypi.org/pypi/maafw/5.14.3/json)
+
+窗口选择依据为 MaaEnd 基线 `8cccaaec8f59f4b4689b59db84a39d25066ff5ec` 的 `assets/interface.json` 中 `Win32-Front` 配置。探针沿用 `Win32Controller` 与 `ScreenDC`，输入方式设为 `Null`。该版本 `ScreenDC` 会调用恢复前台和确保窗口位于屏幕内的辅助函数，可能改变窗口前台或位置。报告明确记录这些副作用及检查边界，无法保证截图期间窗口状态绝对不变。[ScreenDC 实现](https://github.com/MaaXYZ/MaaFramework/blob/v5.14.3/source/MaaWin32ControlUnit/Screencap/ScreenDCScreencap.cpp) [前台辅助实现](https://github.com/MaaXYZ/MaaFramework/blob/v5.14.3/source/MaaWin32ControlUnit/Base/ForegroundUtils.h) [连接实现](https://github.com/MaaXYZ/MaaFramework/blob/v5.14.3/source/MaaWin32ControlUnit/Manager/Win32ControlUnitMgr.cpp)
+
+已核验 5.14.3 wheel 中的构造参数、原尺寸开关、作业状态轮询、`get(wait=False)`、原始分辨率和 BGR 数据约定。PNG 写入前转换为 RGB。连接内部等待上限 10 秒、截图 5 秒，主进程分别以 25 秒、12 秒限制整个工作进程请求。[Python 绑定](https://github.com/MaaXYZ/MaaFramework/blob/v5.14.3/source/binding/Python/maa/controller.py)
+
+原生渲染帧时间不可获取，因此 `native_render_timestamp` 为 `null`，`frame_freshness` 为 `unknown`。API 完成时间用于主机操作记录。当前本地验证覆盖参数、路径、超时回收、失败持久化与颜色转换，Windows 游戏截图、DPI、权限及用户操作验收仍待实机结果。自动跑图、定位、相机求解与重建属于后续阶段。
