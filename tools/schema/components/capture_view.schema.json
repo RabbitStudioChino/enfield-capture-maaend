@@ -1,0 +1,65 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "Native Capture View Parameters",
+    "$defs": {
+        "CaptureViewParam": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "session_id",
+                "frame_id",
+                "expected_zone",
+                "target",
+                "yaw_degrees",
+                "output_dir"
+            ],
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z0-9._-]+$"
+                },
+                "frame_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z0-9._-]+$"
+                },
+                "expected_zone": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "target": {
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    },
+                    "minItems": 2,
+                    "maxItems": 2
+                },
+                "yaw_degrees": {
+                    "type": "number",
+                    "minimum": 0,
+                    "exclusiveMaximum": 360
+                },
+                "output_dir": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "arrival_radius": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "maximum": 20,
+                    "default": 3
+                },
+                "timeout_ms": {
+                    "type": "integer",
+                    "minimum": 1000,
+                    "maximum": 120000,
+                    "default": 20000
+                }
+            }
+        }
+    }
+}

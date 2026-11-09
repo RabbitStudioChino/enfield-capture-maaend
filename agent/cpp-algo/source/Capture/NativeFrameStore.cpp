@@ -172,6 +172,59 @@ json::value locate_or_null(const std::optional<maplocator::LocateResult>& locate
 
 } // namespace
 
+void AssertCaptureDirectory(const std::filesystem::path& directory)
+{
+    assert_real_directory(directory);
+}
+
+void WriteCaptureReceipt(const std::filesystem::path& path, const json::value& record)
+{
+    write_json_file(path, record);
+}
+
+void WriteCapturePng(const std::filesystem::path& path, const cv::Mat& image)
+{
+    auto temporary = path;
+    temporary += ".partial";
+    std::vector<unsigned char> encoded;
+    if (!cv::imencode(".png", image, encoded)) {
+        throw std::runtime_error("Native PNG encoding failed");
+    }
+    write_new_file(temporary, encoded.data(), encoded.size());
+    if (std::filesystem::exists(path)) {
+        throw std::runtime_error("Native capture refuses to overwrite an existing image");
+    }
+    std::filesystem::rename(temporary, path);
+}
+
+json::object SerializeCompletion(const FrameCompletion& completion)
+{
+    return json::object {
+        { "schema_version", "capture.native.frame/1.0" },
+        { "session_id", completion.clock.session_id },
+        { "clock_id", completion.clock.clock_id },
+        { "frame_id", completion.frame_id },
+        { "frame_freshness", "unknown" },
+        { "timing",
+          json::object {
+              { "request_monotonic_ns", std::to_string(completion.request_monotonic_ns) },
+              { "screencap_completed_monotonic_ns", time_or_null(completion.screencap_completed_monotonic_ns) },
+              { "locate_started_monotonic_ns", time_or_null(completion.locate_started_monotonic_ns) },
+              { "locate_completed_monotonic_ns", time_or_null(completion.locate_completed_monotonic_ns) },
+              { "completed_monotonic_ns", std::to_string(completion.completed_monotonic_ns) },
+              { "native_render_timestamp", nullptr },
+          } },
+        { "locate_result", locate_or_null(completion.locate_result) },
+        { "position_before_normalization", position_or_null(completion.position_before_normalization) },
+        { "position_after_normalization", position_or_null(completion.position_after_normalization) },
+        { "normalization_id", completion.normalization_id ? json::value(*completion.normalization_id) : json::value(nullptr) },
+        { "heading_source", completion.heading_source == mapnavigator::HeadingSource::Camera ? "camera" : "character" },
+        { "navigation_valid", completion.navigation_valid },
+        { "outcome", completion.outcome },
+        { "reason", completion.reason },
+    };
+}
+
 NativeFrameStore::NativeFrameStore(const std::filesystem::path& workspace, CaptureClock clock)
     : clock_(std::move(clock))
 {
@@ -220,17 +273,7 @@ void NativeFrameStore::write(const FrameCompletion& completion, const cv::Mat& i
     if (!image.empty()) {
         const auto relative = MAA_NS::path("images/" + completion.frame_id + ".png");
         const auto target = run_path_ / relative;
-        auto temporary = target;
-        temporary += ".partial";
-        std::vector<unsigned char> encoded;
-        if (!cv::imencode(".png", image, encoded)) {
-            throw std::runtime_error("Native PNG encoding failed");
-        }
-        write_new_file(temporary, encoded.data(), encoded.size());
-        if (std::filesystem::exists(target)) {
-            throw std::runtime_error("Native capture refuses to overwrite an existing image");
-        }
-        std::filesystem::rename(temporary, target);
+        WriteCapturePng(target, image);
         image_record = json::object {
             { "uri", MAA_NS::path_to_utf8_string(relative) },
             { "width", image.cols },
@@ -242,31 +285,9 @@ void NativeFrameStore::write(const FrameCompletion& completion, const cv::Mat& i
                                       : "GRAY8" },
         };
     }
-    const json::value record = json::object {
-        { "schema_version", "capture.native.frame/1.0" },
-        { "session_id", clock_.session_id },
-        { "clock_id", clock_.clock_id },
-        { "frame_id", completion.frame_id },
-        { "frame_freshness", "unknown" },
-        { "timing",
-          json::object {
-              { "request_monotonic_ns", std::to_string(completion.request_monotonic_ns) },
-              { "screencap_completed_monotonic_ns", time_or_null(completion.screencap_completed_monotonic_ns) },
-              { "locate_started_monotonic_ns", time_or_null(completion.locate_started_monotonic_ns) },
-              { "locate_completed_monotonic_ns", time_or_null(completion.locate_completed_monotonic_ns) },
-              { "completed_monotonic_ns", std::to_string(completion.completed_monotonic_ns) },
-              { "native_render_timestamp", nullptr },
-          } },
-        { "image", image_record },
-        { "locate_result", locate_or_null(completion.locate_result) },
-        { "position_before_normalization", position_or_null(completion.position_before_normalization) },
-        { "position_after_normalization", position_or_null(completion.position_after_normalization) },
-        { "normalization_id", completion.normalization_id ? json::value(*completion.normalization_id) : json::value(nullptr) },
-        { "heading_source", completion.heading_source == mapnavigator::HeadingSource::Camera ? "camera" : "character" },
-        { "navigation_valid", completion.navigation_valid },
-        { "outcome", completion.outcome },
-        { "reason", completion.reason },
-    };
+    auto payload = SerializeCompletion(completion);
+    payload["image"] = image_record;
+    const json::value record = std::move(payload);
     const auto line = record.dumps() + "\n";
     write_synced(frames_.get(), line.data(), line.size());
     last_sequence_ = sequence;

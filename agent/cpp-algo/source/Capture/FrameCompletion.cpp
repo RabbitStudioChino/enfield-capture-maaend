@@ -59,4 +59,10 @@ CaptureClock NewCaptureClock()
     };
 }
 
+const CaptureClock& ProcessCaptureClock()
+{
+    static const CaptureClock clock = NewCaptureClock();
+    return clock;
+}
+
 } // namespace capture

@@ -9,6 +9,11 @@
 namespace capture
 {
 
+json::object SerializeCompletion(const FrameCompletion& completion);
+void WriteCaptureReceipt(const std::filesystem::path& path, const json::value& record);
+void WriteCapturePng(const std::filesystem::path& path, const cv::Mat& image);
+void AssertCaptureDirectory(const std::filesystem::path& directory);
+
 class NativeFrameStore
 {
 public:

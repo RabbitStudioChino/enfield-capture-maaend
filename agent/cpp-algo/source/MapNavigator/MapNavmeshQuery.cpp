@@ -1,6 +1,7 @@
 #include "MapNavmeshQuery.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -20,6 +21,7 @@
 #include <MaaUtils/Logger.h>
 #include <MaaUtils/Platform.h>
 
+#include "../Capture/FrameCompletion.h"
 #include "../Navmesh/BaseNavGeometry.h"
 #include "../Navmesh/BaseNavPlanner.h"
 #include "../Navmesh/BaseNavReader.h"
@@ -57,6 +59,9 @@ struct QueryParam
     std::vector<std::vector<double>> points;
     std::vector<double> point;
     std::vector<double> start;
+    std::vector<std::vector<double>> polygon;
+    double spacing = 20.0;
+    int max_points = 160;
     std::vector<double> goal;
     double snap_radius = 5.0;
     // 为空表示不限层, 不限面
@@ -64,7 +69,7 @@ struct QueryParam
     std::vector<double> goal_deck_y;
     std::vector<double> position;
     std::string position_zone;
-    json::value custom_action_param = json::object {};
+    json::value custom_action_param = json::object { };
     std::string zipline_account_id;
     std::string out_file;
     // 绳底交互提示文字, 为空时不规划升降索
@@ -77,6 +82,9 @@ struct QueryParam
         MEO_OPT points,
         MEO_OPT point,
         MEO_OPT start,
+        MEO_OPT polygon,
+        MEO_OPT spacing,
+        MEO_OPT max_points,
         MEO_OPT goal,
         MEO_OPT snap_radius,
         MEO_OPT floor_y,
@@ -122,7 +130,7 @@ QueryContext* acquire_context(const std::string& configured_path, std::string& e
         return found->second.get();
     }
 
-    auto loaded = navmesh::LoadBaseNavPack(normalized, {});
+    auto loaded = navmesh::LoadBaseNavPack(normalized, { });
     if (!loaded.ok()) {
         error = loaded.message.empty() ? navmesh::ToString(loaded.status) : loaded.message;
         LogError << "load navmesh failed" << VAR(key) << VAR(error);
@@ -247,7 +255,7 @@ json::value probe_off_mesh(
     const json::value& budget)
 {
     if (planner.snap(geom_zone_id, point, snap_radius, floor_y).has_value()) {
-        return {};
+        return { };
     }
     const auto nearest = planner.snap(geom_zone_id, point, kOffMeshSearchRadius, floor_y);
     if (!nearest) {
@@ -353,8 +361,8 @@ json::object build_route(QueryContext& context, const QueryParam& param)
         floor_y,
         floor_or_none(param.goal_deck_y),
         navmesh::kBaseNavFloorYNone,
-        {},
-        {},
+        { },
+        { },
         param.rope_interact_text.empty() ? nullptr : &no_rope_off);
 
     if (!plan.ok) {
@@ -583,7 +591,7 @@ json::object build_route_preview(const QueryParam& query)
         .x = query.position[0],
         .y = query.position[1],
         // 为空时同实机, 落回区的主层
-        .floor_y = query.floor_y.empty() ? std::optional<double> {} : std::optional<double> { query.floor_y.front() },
+        .floor_y = query.floor_y.empty() ? std::optional<double> { } : std::optional<double> { query.floor_y.front() },
         .zone_id = query.position_zone,
     };
     mapnavigator::NormalizeLivePositionToBase(param, position);
@@ -591,12 +599,7 @@ json::object build_route_preview(const QueryParam& query)
     mapnavigator::ResetZiplineOutcome();
     std::vector<mapnavigator::Waypoint> expanded;
     std::vector<mapnavigator::NavmeshRouteDiagnostic> diagnostics;
-    if (!mapnavigator::ExpandNavmeshWaypoints(
-            param,
-            position,
-            [] { return false; },
-            expanded,
-            &diagnostics)) {
+    if (!mapnavigator::ExpandNavmeshWaypoints(param, position, [] { return false; }, expanded, &diagnostics)) {
         const mapnavigator::NavmeshExpansionFailure failure = mapnavigator::CurrentNavmeshExpansionFailure();
         json::object result = fail(failure.message.empty() ? "路线展开失败" : failure.message);
         json::object detail {
@@ -661,14 +664,15 @@ json::object build_route_preview(const QueryParam& query)
         append_distinct(current_walk, point);
         if (waypoint.rope_ride && index + 1 < expanded.size()) {
             const mapnavigator::Waypoint& top = expanded[index + 1];
-            rope_segments.emplace_back(json::object {
-                { "from", json::array { point.x, point.y } },
-                { "to", json::array { top.x, top.y } },
-                { "from_height", waypoint.route_floor_y ? json::value(*waypoint.route_floor_y) : json::value() },
-                { "to_height", waypoint.rope_ride->top_height },
-                { "uid", waypoint.rope_ride->uid },
-                { "ride_s", waypoint.rope_ride->ride_s },
-            });
+            rope_segments.emplace_back(
+                json::object {
+                    { "from", json::array { point.x, point.y } },
+                    { "to", json::array { top.x, top.y } },
+                    { "from_height", waypoint.route_floor_y ? json::value(*waypoint.route_floor_y) : json::value() },
+                    { "to_height", waypoint.rope_ride->top_height },
+                    { "uid", waypoint.rope_ride->uid },
+                    { "ride_s", waypoint.rope_ride->ride_s },
+                });
         }
 
         if (waypoint.action != mapnavigator::ActionType::ZIPLINE) {
@@ -738,10 +742,150 @@ json::object build_warm(QueryContext& context, const QueryParam& param)
     return json::object { { "ok", true }, { "zone", zone->name } };
 }
 
+json::object build_coverage(QueryContext& context, const QueryParam& param)
+{
+    constexpr std::size_t kCandidateLimit = 4096;
+    constexpr int kMaxCoveragePoints = 512;
+    constexpr auto kPlanningBudget = std::chrono::seconds(30);
+    if (param.zone_id < 0 || param.zone_id > 65535 || param.start.size() != 2 || param.polygon.size() < 3 || param.polygon.size() > 64
+        || !std::isfinite(param.spacing) || param.spacing < 1.0 || param.spacing > 512.0 || param.max_points < 1
+        || param.max_points > kMaxCoveragePoints || !std::isfinite(param.start[0]) || !std::isfinite(param.start[1])
+        || param.floor_y.size() > 1 || (!param.floor_y.empty() && !std::isfinite(static_cast<float>(param.floor_y.front())))) {
+        return fail("coverage requires finite start/polygon, spacing 1..512 and max_points 1..512");
+    }
+    const auto geometry_id = context.pack.geometryZoneId(static_cast<uint16_t>(param.zone_id));
+    const auto* zone = context.pack.findZone(geometry_id);
+    if (zone == nullptr || zone->triangle_count == 0) {
+        return fail("coverage zone has no geometry");
+    }
+    std::vector<cv::Point2f> polygon;
+    for (const auto& point : param.polygon) {
+        if (point.size() != 2 || !std::isfinite(point[0]) || !std::isfinite(point[1]) || std::abs(point[0]) > 1e7
+            || std::abs(point[1]) > 1e7) {
+            return fail("coverage polygon contains an invalid point");
+        }
+        polygon.emplace_back(static_cast<float>(point[0]), static_cast<float>(point[1]));
+    }
+    if (std::abs(cv::contourArea(polygon)) < 1.0) {
+        return fail("coverage polygon has no area");
+    }
+    const auto inside = [&](const navmesh::WorldPoint& point) {
+        return cv::pointPolygonTest(polygon, cv::Point2f(static_cast<float>(point.x), static_cast<float>(point.y)), false) >= 0.0;
+    };
+    const navmesh::WorldPoint start { param.start[0], param.start[1] };
+    const float floor_y = floor_or_none(param.floor_y);
+    const auto start_snap = context.planner->snap(geometry_id, start, 8.0, floor_y);
+    if (!start_snap) {
+        return fail("coverage start is outside the walkable mesh");
+    }
+    const auto component = context.planner->componentId(start_snap->triangle);
+    const auto bounds = cv::boundingRect(polygon);
+    const double left = std::max(0.0, static_cast<double>(bounds.x));
+    const double top = std::max(0.0, static_cast<double>(bounds.y));
+    const double right = std::min(static_cast<double>(zone->width), static_cast<double>(bounds.x) + bounds.width);
+    const double bottom = std::min(static_cast<double>(zone->height), static_cast<double>(bounds.y) + bounds.height);
+
+    struct Candidate
+    {
+        navmesh::WorldPoint target;
+        double height;
+    };
+
+    std::vector<Candidate> candidates;
+    std::size_t visited = 0;
+    std::size_t rejected = 0;
+    const double first_y = std::min(top + param.spacing * 0.5, (top + bottom) * 0.5);
+    const double first_x = std::min(left + param.spacing * 0.5, (left + right) * 0.5);
+    for (double y = first_y; y < bottom && visited < kCandidateLimit; y += param.spacing) {
+        for (double x = first_x; x < right && visited < kCandidateLimit; x += param.spacing) {
+            ++visited;
+            const navmesh::WorldPoint point { x, y };
+            if (!inside(point)) {
+                continue;
+            }
+            const auto snapped = context.planner->snap(geometry_id, point, std::min(3.0, param.spacing * 0.25), floor_y);
+            if (!snapped || !inside(snapped->point) || context.planner->isSmallIslandTriangle(snapped->triangle)
+                || context.planner->componentId(snapped->triangle) != component) {
+                ++rejected;
+                continue;
+            }
+            candidates.push_back({ snapped->point, context.planner->triangleHeight(snapped->triangle) });
+        }
+    }
+    if (candidates.empty() && inside(start_snap->point)) {
+        candidates.push_back({ start_snap->point, context.planner->triangleHeight(start_snap->triangle) });
+    }
+    json::array points;
+    json::array route;
+    // Keep the original start for the engine NoGo check before its own snapping.
+    navmesh::WorldPoint current = start;
+    double current_height = context.planner->triangleHeight(start_snap->triangle);
+    const auto deadline = std::chrono::steady_clock::now() + kPlanningBudget;
+    const auto exhausted = [&] {
+        return std::chrono::steady_clock::now() >= deadline;
+    };
+    const auto attempts_limit = std::min(kCandidateLimit, static_cast<std::size_t>(param.max_points) * 4);
+    std::size_t attempts = 0;
+    while (!candidates.empty() && points.size() < static_cast<std::size_t>(param.max_points) && attempts < attempts_limit && !exhausted()) {
+        const auto nearest = std::min_element(candidates.begin(), candidates.end(), [&](const auto& lhs, const auto& rhs) {
+            return std::hypot(lhs.target.x - current.x, lhs.target.y - current.y)
+                   < std::hypot(rhs.target.x - current.x, rhs.target.y - current.y);
+        });
+        const auto candidate = *nearest;
+        candidates.erase(nearest);
+        ++attempts;
+        const auto plan = context.engine->plan(
+            zone->name,
+            current,
+            candidate.target,
+            floor_y,
+            floor_y,
+            static_cast<float>(candidate.height),
+            static_cast<float>(current_height),
+            { },
+            exhausted);
+        if (!plan.ok || plan.points.empty()) {
+            ++rejected;
+            continue;
+        }
+        const auto target = plan.points.back();
+        if (!inside(target)) {
+            ++rejected;
+            continue;
+        }
+        const double height = plan.heights.empty() ? candidate.height : plan.heights.back();
+        points.emplace_back(json::object { { "target", json::array { target.x, target.y } }, { "target_deck_y", height } });
+        for (const auto& point : plan.points) {
+            route.emplace_back(json::array { point.x, point.y });
+        }
+        current = target;
+        current_height = height;
+    }
+    if (points.empty()) {
+        return fail("coverage found no reachable observation point within the planning budget");
+    }
+    return json::object {
+        { "ok", true },
+        { "zone", json::object { { "zone_id", param.zone_id }, { "name", zone->name }, { "geometry_zone_id", geometry_id } } },
+        { "points", std::move(points) },
+        { "route", std::move(route) },
+        { "rejected", rejected },
+        { "budget_exhausted", visited == kCandidateLimit || !candidates.empty() || exhausted() },
+    };
+}
+
 json::object dispatch(const QueryParam& param)
 {
     if (param.op.empty()) {
         return fail("缺少 op");
+    }
+    if (param.op == "capture_clock") {
+        const auto& clock = capture::ProcessCaptureClock();
+        return json::object { { "ok", true },
+                              { "clock",
+                                json::object { { "clock_id", clock.clock_id },
+                                               { "monotonic_anchor_ns", std::to_string(clock.monotonic_anchor_ns) },
+                                               { "utc_anchor_unix_ns", std::to_string(clock.utc_anchor_unix_ns) } } } };
     }
     if (param.op == "route_preview") {
         return build_route_preview(param);
@@ -752,6 +896,9 @@ json::object dispatch(const QueryParam& param)
         return fail("navmesh 加载失败: " + error);
     }
 
+    if (param.op == "coverage") {
+        return build_coverage(*context, param);
+    }
     if (param.op == "zones") {
         return build_zones(context->pack);
     }
@@ -782,8 +929,12 @@ std::optional<QueryParam> parse_param(const char* custom_recognition_param)
     if (!parsed) {
         return std::nullopt;
     }
-    QueryParam value {};
-    if (!value.from_json(*parsed)) {
+    QueryParam value { };
+    json::value normalized = *parsed;
+    if (normalized.exists("floor_y") && normalized.at("floor_y").is_number()) {
+        normalized["floor_y"] = json::array { normalized.at("floor_y") };
+    }
+    if (!value.from_json(normalized)) {
         // from_json 中途失败会留下写了一半的字段
         return std::nullopt;
     }

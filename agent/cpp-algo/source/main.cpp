@@ -13,6 +13,7 @@
 #include <MaaUtils/SafeWindows.hpp>
 #endif
 
+#include "Capture/CaptureViewAction.h"
 #include "Common/CrashHandler.h"
 #include "Common/MacAppHost.h"
 #include "Common/ParentProcessWatcher.h"
@@ -149,6 +150,7 @@ int main(int argc, char** argv)
     MaaAgentServerRegisterCustomRecognition("IconRecognition", iconrecognition::IconRecognitionRun, nullptr);
     MaaAgentServerRegisterCustomRecognition("MapFind", worldmap::MapFindRun, nullptr);
     MaaAgentServerRegisterCustomAction("MapNavigateAction", mapnavigator::MapNavigateActionRun, nullptr);
+    MaaAgentServerRegisterCustomAction("CaptureViewAction", capture::CaptureViewActionRun, nullptr);
     MaaAgentServerRegisterCustomAction("RealTimeTaskAction", realtimetask::RealTimeTaskActionRun, nullptr);
 #if defined(MAAEND_HAVE_WEBVIEW2) || defined(MAAEND_HAVE_WEBKIT)
     // 导入要开一个内嵌浏览器让用户自己登录, 而这个控件只有 Windows 和 macOS 有实现,

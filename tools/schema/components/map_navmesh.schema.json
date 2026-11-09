@@ -32,7 +32,9 @@
                         "deck_probe",
                         "route",
                         "warm",
-                        "route_preview"
+                        "route_preview",
+                        "coverage",
+                        "capture_clock"
                     ]
                 },
                 "navmesh_file": {"type": "string"},
@@ -44,11 +46,17 @@
                 "point": {"$ref": "#/$defs/Coordinate2D"},
                 "start": {"$ref": "#/$defs/Coordinate2D"},
                 "goal": {"$ref": "#/$defs/Coordinate2D"},
+                "polygon": {"type": "array", "items": {"$ref": "#/$defs/Coordinate2D"}, "minItems": 3, "maxItems": 64},
+                "spacing": {"type": "number", "minimum": 1, "maximum": 512},
+                "max_points": {"type": "integer", "minimum": 1, "maximum": 512, "default": 160},
                 "snap_radius": {
                     "type": "number",
                     "minimum": 0
                 },
-                "floor_y": {"$ref": "#/$defs/OptionalHeight"},
+                "floor_y": {"oneOf": [
+                        {"type": "number"},
+                        {"$ref": "#/$defs/OptionalHeight"}
+                    ]},
                 "goal_deck_y": {"$ref": "#/$defs/OptionalHeight"},
                 "position": {"$ref": "#/$defs/Coordinate2D"},
                 "position_zone": {
@@ -62,6 +70,14 @@
                 }
             },
             "allOf": [
+                {
+                    "if": {"properties": {"op": {"const": "coverage"}}},
+                    "then": {"required": [
+                            "zone_id",
+                            "start",
+                            "polygon"
+                        ]}
+                },
                 {
                     "if": {"properties": {"op": {"const": "mesh"}}},
                     "then": {"required": [

@@ -37,6 +37,7 @@
                 "BetterSliding",
                 "CameraScanAction",
                 "CaptureUid",
+                "CaptureViewAction",
                 "CharacterControllerForwardAxisAction",
                 "CharacterControllerPitchDeltaAction",
                 "CharacterControllerRelativeMoveAction",
@@ -104,6 +105,28 @@
         }
     },
     "allOf": [
+        {
+            "if": {
+                "properties": {
+                    "custom_action": {
+                        "const": "CaptureViewAction"
+                    }
+                },
+                "required": [
+                    "custom_action"
+                ]
+            },
+            "then": {
+                "properties": {
+                    "custom_action_param": {
+                        "$ref": "./components/capture_view.schema.json#/$defs/CaptureViewParam"
+                    }
+                },
+                "required": [
+                    "custom_action_param"
+                ]
+            }
+        },
         {
             "if": {
                 "properties": {

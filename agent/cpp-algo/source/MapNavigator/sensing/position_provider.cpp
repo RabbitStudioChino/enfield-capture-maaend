@@ -1,5 +1,6 @@
 #include "position_provider.h"
 
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <stdexcept>
@@ -18,6 +19,10 @@ namespace mapnavigator
 
 namespace
 {
+
+// Existing minimap templates and ROI use a 720-high landscape reference.
+constexpr int kPhotographyReferenceHeight = 720;
+std::atomic<std::uint64_t> capture_attempt_sequence = 0;
 
 bool is_black_screen(const cv::Mat& image)
 {
@@ -75,10 +80,15 @@ std::optional<double> confident_camera_heading(const maplocator::LocateResult& l
 
 } // namespace
 
-PositionProvider::PositionProvider(MaaController* controller, std::shared_ptr<maplocator::MapLocator> locator, HeadingSource heading_source)
+PositionProvider::PositionProvider(
+    MaaController* controller,
+    std::shared_ptr<maplocator::MapLocator> locator,
+    HeadingSource heading_source,
+    capture::CaptureClock clock)
     : controller_(controller)
     , locator_(std::move(locator))
     , heading_source_(heading_source)
+    , capture_clock_(std::move(clock))
     , adb_like_controller_(IsAdbLikeControllerType(DetectControllerType(controller_)))
 {
 }
@@ -111,14 +121,25 @@ bool PositionProvider::captureForStrictGoal(NaviPosition* out_pos, const std::st
     return captureWith(out_pos, std::move(options), HeadingSource::Camera);
 }
 
-bool PositionProvider::captureWith(NaviPosition* out_pos, maplocator::LocateOptions options, HeadingSource heading_source)
+bool PositionProvider::captureForPhotography(NaviPosition* out_pos)
+{
+    maplocator::LocateOptions options;
+    options.precise_position = true;
+    return captureWith(out_pos, std::move(options), HeadingSource::Camera, true);
+}
+
+bool PositionProvider::captureWith(
+    NaviPosition* out_pos,
+    maplocator::LocateOptions options,
+    HeadingSource heading_source,
+    bool raw_photography)
 {
     // buffer 必须比完成回调活得更久，回调返回前 image 仍借用其内存。
     std::optional<ScopedImageBuffer> buffer;
     cv::Mat image;
     capture::FrameCompletion completion;
     completion.clock = capture_clock_;
-    completion.frame_id = capture_clock_.session_id + "-" + std::to_string(++capture_sequence_);
+    completion.frame_id = capture_clock_.session_id + "-" + std::to_string(capture_attempt_sequence.fetch_add(1) + 1);
     completion.request_monotonic_ns = capture::MonotonicNowNs();
     completion.heading_source = heading_source;
     if (position_normalizer_ && !normalization_id_.empty()) {
@@ -151,6 +172,11 @@ bool PositionProvider::captureWith(NaviPosition* out_pos, maplocator::LocateOpti
         const auto screencap_done_at = std::chrono::steady_clock::now();
 
         image = to_mat(buffer->Get());
+        cv::Mat localization_image = image;
+        if (raw_photography && image.rows != kPhotographyReferenceHeight && !image.empty()) {
+            const double scale = static_cast<double>(kPhotographyReferenceHeight) / image.rows;
+            cv::resize(image, localization_image, cv::Size(), scale, scale, cv::INTER_AREA);
+        }
         last_capture_was_black_screen_ = is_black_screen(image);
         if (options.precise_position && last_capture_was_black_screen_) {
             completion.outcome = "black_screen";
@@ -158,10 +184,10 @@ bool PositionProvider::captureWith(NaviPosition* out_pos, maplocator::LocateOpti
             return false;
         }
         if (frame_observer_) {
-            frame_observer_(image);
+            frame_observer_(localization_image);
         }
         cv::Mat minimap;
-        if (!maplocator::TryExtractMinimap(image, adb_like_controller_, &minimap)) {
+        if (!maplocator::TryExtractMinimap(localization_image, adb_like_controller_, &minimap)) {
             completion.outcome = "minimap_unavailable";
             last_locate_message_ = "minimap not extracted";
             return false;

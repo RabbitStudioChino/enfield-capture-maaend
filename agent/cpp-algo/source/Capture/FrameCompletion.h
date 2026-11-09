@@ -65,6 +65,7 @@ private:
 };
 
 CaptureClock NewCaptureClock();
+const CaptureClock& ProcessCaptureClock();
 std::int64_t MonotonicNowNs();
 
 } // namespace capture
