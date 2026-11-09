@@ -70,6 +70,7 @@ def main():
         report["requirements_sha256"] = hashlib.sha256(lock.read_bytes()).hexdigest()
         report["venv"] = str(venv)
         with (run / "logs/install.log").open("wb") as log:
+            print("Creating the local Python environment (up to 120 seconds).", flush=True)
             subprocess.run(
                 [sys.executable, "-m", "venv", str(venv)],
                 cwd=SOURCE_ROOT,
@@ -80,6 +81,7 @@ def main():
                 timeout=120,
             )
             python = venv / "Scripts/python.exe"
+            print(f"Installing locked dependencies (up to 300 seconds). Log: {run / 'logs/install.log'}", flush=True)
             subprocess.run(
                 [
                     str(python),

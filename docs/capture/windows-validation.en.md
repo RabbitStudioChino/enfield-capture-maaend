@@ -4,17 +4,17 @@ This document covers the M0/C01 Windows connection and finite capture probe. Use
 
 ## Environment Preparation
 
-- Use Windows 10 or Windows 11, with Python 3.12 x64 installed.
+- Use Windows 10 or Windows 11. The launcher automatically prepares project-local CPython 3.12.10 x64.
 - Manually start the game and enter a scene suitable for observation. Keep exactly one game window with `Endfield` in its title and the `UnityWndClass` window class.
 - Disable Windows HDR and automatic color management. Keep game resolution and display scaling fixed. Keep the entire window visible within the monitor, restored, and in the foreground, with no overlay dialogs.
 - Use the same privilege level for the capture process and the game. For permission errors, inspect the report and the game and terminal privilege settings, then restart the relevant programs yourself.
-- Extract the minimal source ZIP to a normal local directory such as `D:\EndfieldCapture`. The directory and its `local` descendants should be real directories, without symlinks or NTFS junctions.
+- Extract the updated delivery ZIP to a fresh normal local directory such as `D:\EndfieldCapture`, avoiding an old virtual environment. The directory and its `local` descendants should be real directories, without symlinks or NTFS junctions.
 
 The probe connects only to an already running game. Input methods are fixed to `Null`. You move the character and camera manually. Connection and capture run in a separate SDK subprocess, which is terminated and reaped after a timeout or Ctrl+C. Internally, `ScreenDC` may restore game focus or move its window. Focus and minimization checks apply at checking boundaries, so races remain possible during capture.
 
 ## One-Click Execution
 
-1. Double-click `scripts\capture\capture.cmd`, which runs `doctor` by default. It creates an isolated environment under `local\envs\capture-windows-py312` in the extracted directory and downloads locked dependencies. Installation logs and reports remain under `local\validation\windows-capture\<run-id>`.
+1. Double-click `scripts\capture\capture.cmd`, which runs `doctor` by default. It verifies the cached official Python package and extracts it under `local\runtime\python-3.12.10`. If the cache is missing, it downloads the package from a fixed NuGet HTTPS URL and verifies SHA-256. It then creates `local\envs\capture-windows-py312` and installs locked dependencies online. The console displays environment and dependency setup progress. Reports and logs remain under `local\validation\windows-capture\<run-id>`, and the window stays open after a failure.
 2. After installation, a five-second countdown appears. Switch back to the game immediately and keep it in the foreground. `doctor` checks the system, Python and SDK versions, candidate windows, connection, and one original-size screenshot.
 3. Open Command Prompt in the extracted directory and run the command below. Switch back to the game during the countdown, then manually change the viewing direction or position about every two seconds for 12 attempts.
 
@@ -22,11 +22,11 @@ The probe connects only to an already running game. Input methods are fixed to `
 scripts\capture\capture.cmd probe
 ```
 
-If your PowerShell environment permits local scripts, these commands are also available. If policy blocks `.ps1`, use the `.cmd` entry point above. The scripts preserve the system execution policy and current process privileges.
+The `.cmd` entry point uses system PowerShell with `ExecutionPolicy Bypass` scoped to that subprocess. The runtime, virtual environment, caches, and temporary files stay under `local` in the extracted directory. These commands can also be run from PowerShell.
 
 ```powershell
-.\scripts\capture\capture.ps1 -Mode doctor
-.\scripts\capture\capture.ps1 -Mode probe
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\capture\capture.ps1 -Mode doctor
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\capture\capture.ps1 -Mode probe
 ```
 
 ## Command-Line Parameters
@@ -42,7 +42,7 @@ local\envs\capture-windows-py312\Scripts\python.exe -m tools.capture probe --wor
 
 ## Inspecting and Returning Results
 
-Every run uses a new timestamp and random identifier, preserving earlier results. Dependency installation and capture reports may occupy separate directories.
+Every run uses a new timestamp and random identifier, preserving earlier results. Python bootstrap, dependency installation, and capture reports may occupy separate directories. Python bootstrap directories contain `report.json`, `install.log`, and version-check logs. Dependency installation logs use `logs/install.log`.
 
 ```text
 local/validation/windows-capture/<run-id>/
@@ -66,7 +66,7 @@ The exit code is `0` when all attempts succeed, `1` for partial success or failu
 
 | Symptom | Results to return and action |
 | --- | --- |
-| Missing Python or wrong version | Inspect the `capture.probe.bootstrap/1.0` setup report, install Python 3.12 x64, and run again |
+| Python package download, hash, or runtime validation fails | Return the Python bootstrap report and `install.log`. Use the updated delivery in a fresh directory. For a cache hash mismatch, follow the error to remove the corrupt `.nupkg` and retry |
 | Dependency download or hash verification fails | Preserve the setup report and `logs/install.log`, check connectivity, and run again |
 | Missing SDK, wrong version, or DLL load failure | Return package versions, the connection error, and `logs/worker.log` |
 | Zero or multiple game windows | Return the candidate window list and confirm exactly one matching running game window |
@@ -75,6 +75,8 @@ The exit code is `0` when all attempts succeed, `1` for partial success or failu
 | Connection or capture timeout | Preserve the report and worker log, including the PID, exit reason, and return code |
 
 ## SDK and Provenance
+
+Python uses the official NuGet `python/3.12.10` x64 package, cached at `local/cache/python/python.3.12.10.nupkg`. Updated delivery ZIPs include this cache, allowing initial Python extraction offline. SDK dependency installation still requires network access. The fixed SHA-256 is `0eb85c2dfccccf1b17352de4c397f69194035b7d37149eacc16f1147d93de3b8`. The package retains the CPython license. Missing-cache downloads use a 120-second timeout and at most five redirects. Extraction follows successful hash verification. Before execution, the launcher checks the version, x64 architecture, `venv`, and `ensurepip`. [Official Python NuGet guide](https://docs.python.org/3.12/using/windows.html#the-nuget-org-packages) [Pinned package version](https://www.nuget.org/packages/python/3.12.10)
 
 The lock fixes `maafw==5.14.3`, `numpy==2.5.4`, `pillow==13.0.0`, `strenum==0.5.0`, and `maaagentbinary==1.0.1`, using Windows Python 3.12 x64 wheel hashes. The 5.14.3 Windows x64 wheel SHA-256 is `5fcd48d85b2110150f19848da777564abe64e4ca64966704cb8dec948d243ce5`, matching upstream `uv.lock` and PyPI release metadata. [PyPI release metadata](https://pypi.org/pypi/maafw/5.14.3/json)
 

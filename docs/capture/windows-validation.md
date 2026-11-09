@@ -4,17 +4,17 @@
 
 ## 环境准备
 
-- 使用 Windows 10 或 Windows 11，安装 Python 3.12 x64。
+- 使用 Windows 10 或 Windows 11。启动脚本会自动准备项目内 CPython 3.12.10 x64。
 - 手动启动游戏并进入可自由观察的场景，保持唯一标题包含 `Endfield`、窗口类为 `UnityWndClass` 的游戏窗口。
 - 关闭 Windows HDR 与自动颜色管理，固定游戏分辨率与显示缩放。保持窗口可见、未最小化且位于前台，整个窗口完整位于显示器内，避免覆盖弹窗。
 - 采集进程与游戏使用相同权限等级。遇到权限错误时按报告确认游戏与终端的权限配置，再由用户重新启动对应程序。
-- 将最小源码 ZIP 解压到普通本地目录，例如 `D:\EndfieldCapture`。目录及其 `local` 子目录应为真实目录，避免符号链接或 NTFS junction。
+- 将新版交付 ZIP 解压到新的普通本地目录，例如 `D:\EndfieldCapture`，避免沿用旧目录的虚拟环境。目录及其 `local` 子目录应为真实目录，避免符号链接或 NTFS junction。
 
 探针只连接已经运行的游戏，输入方式固定为 `Null`，用户自行移动角色和镜头。连接和截图运行在独立 SDK 子进程中，发生超时或 Ctrl+C 后回收该子进程。`ScreenDC` 内部可能恢复游戏前台或移动窗口，前台与最小化检查只在检查边界生效，截图期间仍存在竞态。
 
 ## 一键运行
 
-1. 双击 `scripts\capture\capture.cmd`，默认运行 `doctor`。它会在解压目录的 `local\envs\capture-windows-py312` 创建独立环境，并按锁文件下载依赖。安装日志与报告留在 `local\validation\windows-capture\<run-id>`。
+1. 双击 `scripts\capture\capture.cmd`，默认运行 `doctor`。它先校验本地缓存的官方 Python 包，再展开到 `local\runtime\python-3.12.10`。缓存缺失时从固定 NuGet HTTPS 地址下载并校验 SHA-256，随后创建 `local\envs\capture-windows-py312` 并在线安装锁定依赖。控制台显示环境与依赖安装进度，报告和日志留在 `local\validation\windows-capture\<run-id>`，失败后窗口保留。
 2. 安装结束后出现 5 秒倒计时，立即切回游戏并保持前台。`doctor` 检查系统、Python、SDK 版本、候选窗口、连接与一张原尺寸截图。
 3. 打开命令提示符并切换到解压目录，运行以下命令。出现倒计时后切回游戏，约每两秒手动换一个观察方向或位置，采集 12 次。
 
@@ -22,11 +22,11 @@
 scripts\capture\capture.cmd probe
 ```
 
-PowerShell 环境允许运行本地脚本时，也可使用以下命令。若策略阻止 `.ps1`，使用上述 `.cmd` 入口。脚本沿用系统执行策略和当前进程权限。
+`.cmd` 使用系统 PowerShell，并仅为本次子进程设置 `ExecutionPolicy Bypass`。运行时、虚拟环境、缓存和临时文件全部位于解压目录的 `local` 下。也可在 PowerShell 中运行以下命令。
 
 ```powershell
-.\scripts\capture\capture.ps1 -Mode doctor
-.\scripts\capture\capture.ps1 -Mode probe
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\capture\capture.ps1 -Mode doctor
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\capture\capture.ps1 -Mode probe
 ```
 
 ## 命令行参数
@@ -42,7 +42,7 @@ local\envs\capture-windows-py312\Scripts\python.exe -m tools.capture probe --wor
 
 ## 检查与返回结果
 
-每次运行使用新的时间戳与随机标识目录，保留旧结果。依赖安装报告和采集报告可能分别占用一个目录。
+每次运行使用新的时间戳与随机标识目录，保留旧结果。Python 引导报告、依赖安装报告和采集报告可能分别占用一个目录。Python 引导目录中有 `report.json`、`install.log` 与版本检查日志，依赖安装日志为 `logs/install.log`。
 
 ```text
 local/validation/windows-capture/<run-id>/
@@ -66,7 +66,7 @@ local/validation/windows-capture/<run-id>/
 
 | 现象 | 返回内容与处理 |
 | --- | --- |
-| Python 缺失或版本不符 | 查看 `capture.probe.bootstrap/1.0` 安装报告，安装 Python 3.12 x64 后重新运行 |
+| Python 包下载、哈希或运行时校验失败 | 返回 Python 引导报告与 `install.log`，确认使用新版交付包并解压到新目录；缓存哈希不符时按错误提示移除损坏的 `.nupkg` 后重试 |
 | 依赖下载或哈希验证失败 | 保留安装报告与 `logs/install.log`，确认网络后重新运行 |
 | SDK 缺失、版本错误或 DLL 加载失败 | 返回报告中的包版本、连接错误与 `logs/worker.log` |
 | 游戏窗口为零个或多个 | 返回候选窗口列表，确认游戏正在运行且只有一个匹配窗口 |
@@ -75,6 +75,8 @@ local/validation/windows-capture/<run-id>/
 | 连接或截图超时 | 保留报告和工作进程日志，由报告确认 PID、退出原因与退出码 |
 
 ## SDK 与来源依据
+
+Python 使用官方 NuGet `python/3.12.10` x64 包，缓存路径为 `local/cache/python/python.3.12.10.nupkg`。新版交付 ZIP 内置此缓存，首次准备 Python 可直接离线展开，SDK 依赖安装仍需联网。固定 SHA-256 为 `0eb85c2dfccccf1b17352de4c397f69194035b7d37149eacc16f1147d93de3b8`，包内保留 CPython 许可。缓存缺失时下载限制为 120 秒并允许最多五次重定向，哈希通过后才展开，运行前检查版本、x64 架构、`venv` 与 `ensurepip`。[Python 官方 NuGet 说明](https://docs.python.org/3.12/using/windows.html#the-nuget-org-packages) [固定包版本](https://www.nuget.org/packages/python/3.12.10)
 
 锁文件固定 `maafw==5.14.3`、`numpy==2.5.4`、`pillow==13.0.0`、`strenum==0.5.0` 和 `maaagentbinary==1.0.1`，使用 Windows Python 3.12 x64 wheel 哈希。5.14.3 Windows x64 wheel 的 SHA-256 为 `5fcd48d85b2110150f19848da777564abe64e4ca64966704cb8dec948d243ce5`，与上游 `uv.lock` 及 PyPI 发布元数据一致。[PyPI 发布元数据](https://pypi.org/pypi/maafw/5.14.3/json)
 

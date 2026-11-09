@@ -36,6 +36,8 @@ RabbitStudioChino 的采集与离线制作项目，基于 MaaEnd 固定源码保
 
 `doctor` / `probe` 连接运行中的游戏并截图，输出 `capture.probe/1.0` 诊断报告；观察点由用户手动调整，导航与相机位姿保留未知。游戏键鼠方法固定 `Null`，沿用 MaaEnd 的 `ScreenDC` 后端，SDK 可能恢复焦点或移动窗口。自动计划采集和正式 CaptureBundle 导出依赖 Windows 连接、真实定位及识别模板验证；具体范围见[独立编码与实机边界](docs/capture/implementation-status.md)。独立网页仓库为 [endfield-world-web](https://github.com/RabbitStudioChino/endfield-world-web)。
 
+Windows 可双击 `scripts/capture/capture.cmd` 自动校验并准备项目内 CPython 3.12.10 x64、虚拟环境与锁定依赖。新版交付 ZIP 内置官方 Python 包缓存，下载缺失缓存时也会验证固定 SHA-256。启动过程仅在当前 PowerShell 子进程使用执行策略 Bypass，运行文件与日志均保留在项目 `local` 目录。详细步骤见 [Windows 截图诊断](docs/capture/windows-validation.md)。
+
 本项目测试与样本仅保留在父工作区的 `local/qa/capture/` 和 `local/samples/capture/`，不提交或上传 GitHub。独立 clone 只包含代码、正式 schema 和文档；本地测试工作区的运行方式见契约说明。MaaEnd 继承的测试与模型子模块保持原状。需要 Windows 实机验证时暂停依赖该结果的工作，先提供操作步骤和工作区 `local/validation/windows-capture/<run-id>/` 结果返还目录。
 
 以下保留上游 MaaEnd 介绍与下载说明，其已有自动化能力不代表本 Fork 的采集制作功能已完成。
