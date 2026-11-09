@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>终末地 · 区域采集</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/style.css" />
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body>
+    <header>
+      <strong>区域采集</strong><span>本机控制 · 自动导航与截图</span><span class="badge">编码阶段 · 未验收</span>
+    </header>
+    <main>
+      <aside>
+        <form id="capture-form">
+          <h1>选择要采集的区域</h1>
+          <label for="region">区域名称</label>
+          <input id="region" value="缘缘庄" placeholder="输入完整地名后可直接开始" autocomplete="off" maxlength="120" />
+          <div id="matches" class="matches" aria-live="polite"></div>
+          <p id="region-info" class="hint">正在读取真实传送点目录…</p>
+          <div class="row">
+            <label>周边半径<input id="radius" type="number" min="10" max="600" value="60" /></label
+            ><label>采样间距<input id="spacing" type="number" min="5" max="200" value="20" /></label>
+          </div>
+          <div class="row">
+            <label>每点视角<input id="views" type="number" min="1" max="12" value="8" /></label
+            ><label>点数预算<input id="max-points" type="number" min="1" max="512" value="160" /></label>
+          </div>
+          <p class="hint">
+            范围以传送锚点为中心，单位为 BaseNav 底图像素。地图圈选后使用圈内范围。每点默认以 45°
+            步进拍摄，图像质量待审。
+          </p>
+          <label for="tier">可选导航层级</label
+          ><select id="tier">
+            <option value="">自动选择可达层</option>
+          </select>
+          <label for="floor">可选层高</label
+          ><input id="floor" type="number" placeholder="留空使用导航层级" step="any" />
+          <div class="row actions">
+            <button id="preview" type="button">预览采集点</button
+            ><button id="start" class="primary" type="submit">开始采集</button>
+          </div>
+          <p id="plan-info" class="hint">预览可选。直接开始会先规划，再启动任务。开始后有五秒准备时间切回游戏。</p>
+        </form>
+        <section class="task-panel">
+          <h2>当前任务</h2>
+          <label for="task">任务 ID</label
+          ><input id="task" placeholder="启动后自动填入，也可载入旧任务" maxlength="64" />
+          <button id="load-task" type="button">读取状态</button>
+          <div class="progress"><div id="progress-bar"></div></div>
+          <p id="task-state">尚未启动</p>
+          <p id="identity" class="hint"></p>
+          <div class="row actions">
+            <button data-action="pause" type="button">暂停</button
+            ><button data-action="resume" type="button">恢复</button
+            ><button data-action="stop" type="button">停止</button>
+          </div>
+          <label for="session">导出会话</label
+          ><select id="session">
+            <option value="">最新会话</option>
+          </select>
+          <button id="export" type="button">导出冻结包</button>
+          <p id="export-result" class="hint"></p>
+          <p class="hint">
+            截图与采集进度留在本机任务目录。自动任务暂停会关闭原生连接，恢复时使用新会话和时钟接续计数。
+          </p>
+        </section>
+      </aside>
+      <section class="map-panel" aria-label="真实底图与采集选区">
+        <div class="toolbar">
+          <select id="map" aria-label="底图"></select
+          ><button id="fit" type="button">查看区域</button><button id="draw" type="button">圈选范围</button
+          ><button id="finish" type="button">完成圈选</button><button id="clear" type="button">使用周边半径</button
+          ><label><input id="show-mesh" type="checkbox" />显示网格</label>
+        </div>
+        <div class="canvas-wrap">
+          <canvas
+            id="map-canvas"
+            tabindex="0"
+            aria-label="点击区域标记选择，拖动平移，滚轮缩放；圈选模式点击落点"></canvas>
+        </div>
+        <div class="map-footer">
+          <span id="map-info">地图加载中</span><span>点选区域标记 · 拖动平移 · 滚轮缩放 · 圈选后可直接开始</span>
+        </div>
+        <p id="message" role="status">正在初始化…</p>
+        <details open>
+          <summary>任务事件</summary>
+          <pre id="events">等待任务</pre>
+        </details>
+      </section>
+    </main>
+    <footer id="workspace">所有输出保存在工作区 local/。本页展示采集控制和地图路线。</footer>
+  </body>
+</html>
