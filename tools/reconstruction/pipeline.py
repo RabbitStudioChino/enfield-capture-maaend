@@ -4,6 +4,7 @@ import os
 import re
 import shutil
 import sqlite3
+import time
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
@@ -44,6 +45,7 @@ STAGES = (
     "quality",
     "bundle",
 )
+COARSE_STAGES = ("verify", "preprocess", "features", "match", "map", "coarse_quality")
 VERSION = "1.0.0"
 
 
@@ -109,6 +111,7 @@ def read_config(path, preparation, prepared):
     mapping = config["camera_group_mapping"]
     require(set(mapping) == set(actual), "camera_group_mapping must cover every prepared calibration group exactly")
     dimensions = {}
+    members = {}
     for group_id, target in mapping.items():
         calibration = actual[group_id]["calibration"]
         geometry = (
@@ -121,7 +124,12 @@ def read_config(path, preparation, prepared):
             target not in dimensions or dimensions[target] == geometry,
             "cannot share intrinsics across incompatible calibrations",
         )
+        require(
+            target not in members or (geometry[2] != "unknown" and geometry[3] is not None),
+            "unknown camera mode/FOV cannot justify sharing intrinsics across calibration groups",
+        )
         dimensions[target] = geometry
+        members[target] = group_id
     if config.get("camera_params"):
         require(len(set(dimensions.values())) == 1, "common explicit camera_params require matching group dimensions")
         params = config["camera_params"]
@@ -142,7 +150,18 @@ def read_config(path, preparation, prepared):
     return config
 
 
-def plan(workspace, job, run_id, config_path, toolchain_path):
+def plan(
+    workspace,
+    job,
+    run_id,
+    config_path,
+    toolchain_path,
+    *,
+    mode="full",
+    seed_run=None,
+    final_source=None,
+    max_seconds=None,
+):
     workspace, root = run_root(workspace, run_id, create=True)
     preparation = verify(workspace, job)
     _, prepared = output_path(workspace, job)
@@ -150,8 +169,21 @@ def plan(workspace, job, run_id, config_path, toolchain_path):
     toolchain = load_toolchain(within(workspace, Path(toolchain_path)))
     contract_hash = identifier(*[(path.name, file_hash(path)) for path in sorted(CONTRACTS.glob("*.schema.json"))])
     code_hash = identifier(*[(path.name, file_hash(path)) for path in sorted(Path(__file__).parent.glob("*.py"))])
+    require(mode in ("full", "coarse", "final"), "unsupported reconstruction mode")
+    require(
+        max_seconds is None or (type(max_seconds) in (int, float) and 0 < max_seconds <= 31536000),
+        "max_seconds must be positive and at most one year",
+    )
+    stages = COARSE_STAGES if mode == "coarse" else STAGES
+    extension = {"mode": mode, "seed_run": seed_run, "final_source": final_source, "max_seconds": max_seconds}
     key = identifier(
-        VERSION, file_hash(prepared / "preparation.json"), config, fingerprint(toolchain), contract_hash, code_hash
+        VERSION,
+        file_hash(prepared / "preparation.json"),
+        config,
+        fingerprint(toolchain),
+        contract_hash,
+        code_hash,
+        extension,
     )
     record = {
         "schema_version": "reconstruction.plan/1.0",
@@ -166,8 +198,13 @@ def plan(workspace, job, run_id, config_path, toolchain_path):
         "config_sha256": digest(encoded(config)),
         "toolchain": toolchain,
         "toolchain_sha256": digest(encoded(fingerprint(toolchain))),
-        "stages": list(STAGES),
-        "blockers": [name for name, value in toolchain["tools"].items() if value["status"] != "available"],
+        "stages": list(stages),
+        "execution": extension,
+        "blockers": [
+            name
+            for name, value in toolchain["tools"].items()
+            if value["status"] != "available" and (mode != "coarse" or name == "colmap")
+        ],
     }
     with exclusive(root):
         root.mkdir(exist_ok=False)
@@ -182,7 +219,7 @@ def read_plan(workspace, run_id):
     require(
         record.get("schema_version") == "reconstruction.plan/1.0"
         and record.get("run_id") == run_id
-        and record.get("stages") == list(STAGES),
+        and record.get("stages") in (list(STAGES), list(COARSE_STAGES)),
         "unsupported run plan",
     )
     preparation = verify(workspace, record["job"])
@@ -205,6 +242,7 @@ def read_plan(workspace, run_id):
         fingerprint(record["toolchain"]),
         contract_hash,
         code_hash,
+        *([record["execution"]] if "execution" in record else []),
     )
     require(record["build_key"] == expected, "build inputs or generator changed; create a new plan")
     schema_check("config", record["config"])
@@ -289,7 +327,13 @@ def choose_model(root):
     return candidates[0][1], candidates[0][2], [item[0] for item in candidates]
 
 
-def run(workspace, run_id, resume=False):
+def usage_seconds(root):
+    path = check_path(root / "usage.json")
+    usage = load_json(path.read_bytes(), "run usage") if path.exists() else {"seconds": 0, "active_since": None}
+    return usage["seconds"] + (max(0, time.time() - usage["active_since"]) if usage["active_since"] else 0)
+
+
+def run(workspace, run_id, resume=False, time_budget_seconds=None):
     workspace, root = run_root(workspace, run_id)
     with exclusive(root):
         workspace, root, prepared, preparation, record = read_plan(workspace, run_id)
@@ -297,11 +341,28 @@ def run(workspace, run_id, resume=False):
         require(not record["blockers"], "missing toolchain capabilities: " + ", ".join(record["blockers"]))
         # Recheck the executable bytes rather than trusting a saved doctor's availability flag.
         for name, tool in record["toolchain"]["tools"].items():
-            require(file_hash(Path(tool["path"])) == tool["sha256"], f"installed tool changed: {name}")
+            if tool["status"] == "available":
+                require(file_hash(Path(tool["path"])) == tool["sha256"], f"installed tool changed: {name}")
         if resume:
             (root / "cancel.requested").unlink(missing_ok=True)
         runner = Runner(workspace, root, prepared, preparation, record)
-        return runner.run()
+        runner.consumed_seconds = usage_seconds(root)
+        runner.started = time.monotonic()
+        runner.max_seconds = record.get("execution", {}).get("max_seconds")
+        if time_budget_seconds is not None:
+            limit = runner.consumed_seconds + time_budget_seconds
+            runner.max_seconds = min(runner.max_seconds, limit) if runner.max_seconds is not None else limit
+        atomic_json(root / "usage.json", {"seconds": runner.consumed_seconds, "active_since": time.time()})
+        try:
+            return runner.run()
+        finally:
+            atomic_json(
+                root / "usage.json",
+                {
+                    "seconds": runner.consumed_seconds + time.monotonic() - runner.started,
+                    "active_since": None,
+                },
+            )
 
 
 class Runner:
@@ -322,6 +383,9 @@ class Runner:
         }
         self.cancel = root / "cancel.requested"
         self.active = None
+        self.max_seconds = None
+        self.consumed_seconds = 0
+        self.started = time.monotonic()
 
     def directory(self, stage):
         return self.root / "stages" / stage
@@ -336,17 +400,22 @@ class Runner:
 
     def process(self, argv, directory):
         self.require_active()
+        timeout = self.config["stage_timeout_seconds"]
+        if self.max_seconds is not None:
+            timeout = min(timeout, self.max_seconds - self.consumed_seconds - (time.monotonic() - self.started))
         execute(
             argv,
             directory,
             self.root / "logs" / (self.active + ".log"),
-            self.config["stage_timeout_seconds"],
+            timeout,
             self.cancel,
         )
 
     def require_active(self):
         if self.cancel.exists():
             raise InterruptedError("cancellation requested")
+        if self.max_seconds is not None and self.consumed_seconds + time.monotonic() - self.started >= self.max_seconds:
+            raise TimeoutError("reconstruction compute budget exhausted")
 
     def mvs(self, tool, source, target, directory, extra=()):
         options = [
@@ -390,7 +459,7 @@ class Runner:
         previous = self.record["build_key"]
         reuse = True
         try:
-            for stage in STAGES:
+            for stage in self.record["stages"]:
                 self.active = stage
                 self.require_active()
                 directory = self.directory(stage)
@@ -419,13 +488,24 @@ class Runner:
                     self.root / "status.json",
                     {"status": "running", "build_key": self.record["build_key"], "stage": stage},
                 )
-                getattr(self, "stage_" + stage)(directory)
+                if not self.reuse_final_stage(stage, directory):
+                    getattr(self, "stage_" + stage)(directory)
                 self.require_active()
                 files = inventory(directory)
                 require(bool(files), f"stage {stage} produced no evidence")
                 checkpoint.parent.mkdir(exist_ok=True)
                 atomic_json(checkpoint, {"status": "succeeded", "key": key, "files": files})
                 previous = identifier(key, files)
+            if self.record["stages"] == list(COARSE_STAGES):
+                result = {
+                    "status": "awaiting_review",
+                    "build_key": self.record["build_key"],
+                    "stage": "coarse_quality",
+                    "quality": str(self.directory("coarse_quality") / "quality.json"),
+                    "geometry_acceptance": "not_assessed",
+                }
+                atomic_json(self.root / "status.json", result)
+                return result
             result = {
                 "status": "needs_review",
                 "build_key": self.record["build_key"],
@@ -444,6 +524,70 @@ class Runner:
             }
             atomic_json(self.root / "status.json", result)
             raise
+
+    def cached_run(self, run_id):
+        _, root, prepared, preparation, record = read_plan(self.workspace, run_id)
+        require(record["stages"] == list(COARSE_STAGES), "cache source must be a coarse run")
+        require(status(self.workspace, run_id)["status"] == "awaiting_review", "cache source is not complete")
+        return Runner(self.workspace, root, prepared, preparation, record)
+
+    def verified_stage(self, runner, stage):
+        directory = runner.directory(stage)
+        saved = load_json((runner.root / "checkpoints" / (stage + ".json")).read_bytes(), "cache checkpoint")
+        require(saved.get("status") == "succeeded" and saved.get("files") == inventory(directory), "cache changed")
+        return directory
+
+    def reuse_final_stage(self, stage, directory):
+        source = self.record.get("execution", {}).get("final_source")
+        if not source or stage not in COARSE_STAGES[:5]:
+            return False
+        runner = self.cached_run(source["run_id"])
+        require(runner.record["preparation_sha256"] == self.record["preparation_sha256"], "final inputs changed")
+        require(runner.config == self.config, "final config differs from approved coarse run")
+        require(fingerprint(runner.toolchain) == fingerprint(self.toolchain), "final toolchain differs from coarse run")
+        shutil.copytree(
+            self.verified_stage(runner, stage), directory, dirs_exist_ok=True, ignore=shutil.ignore_patterns(".runtime")
+        )
+        if stage == "map":
+            model = read_model(directory / "models" / source["model"])
+            require(identifier(model) == source["model_digest"], "approved coarse model changed")
+            atomic_json(
+                directory / "selection.json",
+                {
+                    "model": source["model"],
+                    "component_registered_images": [len(model["images"])],
+                    "policy": "explicit_quality_passed_component",
+                    "source_run": source["run_id"],
+                },
+            )
+        return True
+
+    def stage_coarse_quality(self, directory):
+        reports = []
+        for candidate in sorted((self.directory("map") / "models").iterdir()):
+            if candidate.is_dir() and (candidate / "cameras.txt").is_file():
+                model = read_model(candidate)
+                reports.append(
+                    {
+                        "model": candidate.name,
+                        "model_digest": identifier(model),
+                        "metrics": quality_statistics(model, len(self.images)),
+                    }
+                )
+        require(bool(reports), "coarse quality has no model evidence")
+        write_bytes(
+            directory / "quality.json",
+            encoded(
+                {
+                    "schema_version": "reconstruction.coarse-quality/1.0",
+                    "status": "awaiting_review",
+                    "geometry_acceptance": "not_assessed",
+                    "components": reports,
+                    "input_images": len(self.images),
+                    "dense_reconstruction": "not_run",
+                }
+            ),
+        )
 
     def stage_verify(self, directory):
         verify(self.workspace, self.record["job"])
@@ -474,6 +618,42 @@ class Runner:
         write_bytes(directory / "images.json", encoded(manifest))
 
     def stage_features(self, directory):
+        seed = self.record.get("execution", {}).get("seed_run")
+        cache = {"status": "not_requested"}
+        if seed:
+            runner = self.cached_run(seed)
+            fields = ("camera_model", "camera_params", "random_seed", "max_image_size")
+            compatible = all(runner.config[field] == self.config[field] for field in fields)
+            compatible = compatible and all(
+                self.config["camera_group_mapping"].get(group) == target
+                for group, target in runner.config["camera_group_mapping"].items()
+            )
+            compatible = compatible and fingerprint(runner.toolchain)["colmap"] == fingerprint(self.toolchain)["colmap"]
+            old = {image["name"]: image["record"] for image in runner.images}
+            new = {image["name"]: image["record"] for image in self.images}
+            compatible = (
+                compatible
+                and old.keys() <= new.keys()
+                and all(
+                    old[name]["frame"] == new[name]["frame"]
+                    and old[name]["camera_group_id"] == new[name]["camera_group_id"]
+                    for name in old
+                )
+            )
+            if compatible:
+                cached = self.verified_stage(runner, "match") / "database.db"
+                database_check(cached, runner.names, runner.dimensions, matched=True)
+                shutil.copyfile(cached, directory / "database.db")
+                cache = {
+                    "status": "verified_seed",
+                    "source_run": seed,
+                    "database_sha256": file_hash(cached),
+                    "reused_images": len(old),
+                    "new_images": len(new) - len(old),
+                    "matching": "COLMAP exhaustive matcher retains verified existing pairs",
+                }
+            else:
+                cache = {"status": "invalidated", "source_run": seed, "reason": "feature inputs or COLMAP changed"}
         options = [
             "--database_path",
             directory / "database.db",
@@ -492,6 +672,7 @@ class Runner:
             )
         self.colmap("feature_extractor", options, directory)
         database_check(directory / "database.db", self.names, self.dimensions)
+        write_bytes(directory / "cache.json", encoded(cache))
 
     def stage_match(self, directory):
         shutil.copyfile(self.directory("features") / "database.db", directory / "database.db")

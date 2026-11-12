@@ -36,6 +36,9 @@ def main(argv=None):
     command.add_argument("--run", required=True)
     command.add_argument("--config", type=Path, required=True)
     command.add_argument("--toolchain", type=Path, required=True)
+    command.add_argument("--mode", choices=("full", "coarse"), default="full")
+    command.add_argument("--seed-run")
+    command.add_argument("--max-seconds", type=int)
     for name in ("run", "resume", "status", "cancel", "feedback"):
         command = commands.add_parser(name)
         command.add_argument("--workspace", type=Path, required=True)
@@ -53,7 +56,16 @@ def main(argv=None):
         elif args.command == "doctor":
             result = doctor(args.workspace, args.output, args.colmap, args.openmvs_dir)
         elif args.command == "plan":
-            result = plan(args.workspace, args.job, args.run, args.config, args.toolchain)
+            result = plan(
+                args.workspace,
+                args.job,
+                args.run,
+                args.config,
+                args.toolchain,
+                mode=args.mode,
+                seed_run=args.seed_run,
+                max_seconds=args.max_seconds,
+            )
         elif args.command in ("run", "resume"):
             result = run(args.workspace, args.run, resume=args.command == "resume")
         elif args.command == "status":
