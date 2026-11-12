@@ -45,7 +45,7 @@ async function api(path, body) {
         },
   );
   const value = await response.json();
-  if (!response.ok || value.error || value.ok === false) throw new Error(value.error || `请求失败 ${response.status}`);
+  if (!response.ok || value.ok === false) throw new Error(value.error || `请求失败 ${response.status}`);
   return value;
 }
 
@@ -251,7 +251,7 @@ async function refresh() {
     if (state.task !== taskId) return;
     state.checkpoint = checkpoint;
     $("task-state").textContent =
-      `${checkpoint.status} · ${checkpoint.next_index}/${checkpoint.count} · ${checkpoint.active ? "进程运行中" : "进程已退出"}${checkpoint.error ? ` · ${checkpoint.error}` : ""}`;
+      `${checkpoint.status === "paused" ? "已暂停" : checkpoint.status} · ${checkpoint.next_index}/${checkpoint.count} · ${checkpoint.active ? "进程运行中" : "进程已退出"}${checkpoint.error ? ` · 原因：${checkpoint.error}` : ""}${checkpoint.status === "paused" ? "。请排除上述原因，保持游戏窗口可见且未最小化；点击“恢复”后，请在五秒内切回游戏并保持前台。" : ""}`;
     $("progress-bar").style.width = `${checkpoint.count ? (100 * checkpoint.next_index) / checkpoint.count : 0}%`;
     $("identity").textContent =
       `会话 ${checkpoint.session_id || "待创建"}\ngeneration ${checkpoint.generation || "待创建"}`;
@@ -499,7 +499,9 @@ for (const button of document.querySelectorAll("[data-action]"))
           command_id: `${action}-${crypto.randomUUID()}`,
           generation: state.checkpoint?.generation,
         });
-        message(`${action} ${result.result || "已提交"}${action === "resume" ? "，请在五秒内切回游戏。" : ""}`);
+        message(
+          `${action} ${result.result || "已提交"}${action === "resume" ? "，请在五秒内切回游戏并保持前台。" : ""}`,
+        );
         await refresh();
       }, false),
   );
@@ -527,7 +529,7 @@ async function initialize() {
     await setMap(state.catalog.maps[0].id);
     search();
   }
-  message("选择区域后可以直接开始。自动任务将控制游戏移动和镜头，开始后切回游戏。");
+  message("选择区域后可以直接开始。自动任务将控制游戏移动和镜头，开始或恢复后请在五秒内切回游戏并保持前台。");
   try {
     const result = await api("/api/zones");
     state.zones = result.zones;

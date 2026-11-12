@@ -104,7 +104,7 @@ class CaptureApplication:
         path = self.directory / "plans" / f"{plan['plan_id']}.json"
         write_json(path, plan)
         result = self.spawn("auto", task_id, ["--task", task_id, "--plan", str(path), "--start-delay", "5"])
-        return {**result, "plan": plan, "message": "任务已启动，看到运行提示后切回游戏；状态以任务检查点为准"}
+        return {**result, "plan": plan, "message": "任务已启动，请在五秒内切回游戏并保持前台；状态以任务检查点为准"}
 
     def status(self, task_id):
         result = self.run("status", task_id, [])

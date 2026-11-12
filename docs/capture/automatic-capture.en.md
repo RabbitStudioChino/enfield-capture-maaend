@@ -27,11 +27,13 @@ A name identifies an anchor location. The default capture range has a radius of 
 
 “开始采集” (Start capture) plans reachable samples and immediately starts the task. “预览采集点” (Preview samples) separately displays the planned route, reachable point count, view count and rejection count. Drag to pan and scroll to zoom. Selection polygons, routes and sample points share the BaseNav map-image coordinate frame. The mesh display draws a sample of triangles, while planning uses the full navigation data.
 
-Return to the game during the five-second preparation period after starting. The task enters the selected area through an existing teleport entry, navigates to samples through `MapNavigateAction`, and uses the native photography action to adjust camera heading in a closed loop and receive same-frame images and localization. The game screen, unlocked maps, unlocked teleports and current account state affect execution.
+Return to the game during the five-second preparation period after starting or resuming, and keep the game in the foreground with its window visible and restored. The task enters the selected area through an existing teleport entry, navigates to samples through `MapNavigateAction`, and uses the native photography action to adjust camera heading in a closed loop and receive same-frame images and localization. The game screen, unlocked maps, unlocked teleports and current account state affect execution.
 
 ## Task controls and export
 
 The page displays the task ID, state, committed count, session, generation and local events. Pause, resume, stop or enter an earlier task ID to read its state. The navigation executor releases input and acknowledges commands. Pausing an automatic task closes its native connection. Resume uses a new session and clock while continuing the committed count. Committed batches remain immutable.
+
+When a task pauses because its window loses focus or for another reason, the page continues reading checkpoints and events and displays the committed count and original pause reason. A reason containing `foreground=False` means the game was not in the foreground when checked. Keep its window visible and restored, click “恢复” (Resume), and return to the game within five seconds. Investigate other causes using the original error. Window protection remains enforced.
 
 “导出冻结包” (Export frozen bundle) selects a session observed by the current page or exports the latest session. Export returns a local directory after formal CaptureBundle validation. Uncommitted attempts and diagnostics remain in the task directory. Image selection stays `pending`. Navigation position and heading are coarse priors. Camera pose, pitch, FOV, native render time and geometric quality remain unknown. Offline processing starts with [input preparation](offline-preparation.en.md).
 
