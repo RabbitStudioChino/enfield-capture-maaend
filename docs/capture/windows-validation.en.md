@@ -24,6 +24,8 @@ scripts\capture\capture.cmd probe
 
 The `.cmd` entry point uses system PowerShell with `ExecutionPolicy Bypass` scoped to that subprocess. The runtime, virtual environment, caches, and temporary files stay under `local` in the extracted directory. These commands can also be run from PowerShell.
 
+During execution, the launcher sets the PowerShell console and native-command pipeline encodings to UTF-8 so Chinese Python output is not decoded using the system code page. It restores the original encodings on exit. This covers both the `.cmd` entry point and direct `.ps1` invocation.
+
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\capture\capture.ps1 -Mode doctor
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\capture\capture.ps1 -Mode probe
@@ -86,6 +88,8 @@ An earlier interrupted run demonstrated probe-report finalization and worker rea
 | Focus loss, minimization, or changed window identity | Restore the game to the foreground and start a new run |
 | Black image, empty image, or changed dimensions | Return the failed-frame reason, check HDR, window state, and fixed resolution, then run again |
 | Connection or capture timeout | Preserve the report and worker log, including the PID, exit reason, and return code |
+
+If the browser refreshes, closes the connection, or times out while receiving a local control-page response, the service ends that connection without trying to send a second error response after output has started. Business validation and file-read failures still return errors. Task failure reasons remain in checkpoints and task logs.
 
 ## SDK and Provenance
 

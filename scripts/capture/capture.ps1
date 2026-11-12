@@ -142,7 +142,12 @@ function Invoke-CaptureBootstrap {
     $lock = $null
     $exitCode = 1
     $script:Report = $null
+    $previousConsoleEncoding = [Console]::OutputEncoding
+    $previousOutputEncoding = $OutputEncoding
     try {
+        $utf8 = [Text.UTF8Encoding]::new($false)
+        [Console]::OutputEncoding = $utf8
+        $OutputEncoding = $utf8
         if ([string]::IsNullOrWhiteSpace($script:CaptureScriptPath) -or -not [IO.Path]::IsPathRooted($script:CaptureScriptPath)) {
             throw 'Capture script path is unavailable. Run capture.cmd or invoke capture.ps1 with -File.'
         }
@@ -233,6 +238,8 @@ function Invoke-CaptureBootstrap {
         }
         $exitCode = 1
     } finally {
+        [Console]::OutputEncoding = $previousConsoleEncoding
+        $OutputEncoding = $previousOutputEncoding
         if ($lock) { $lock.Dispose() }
         if ($script:Report) {
             if ($script:Report.status -eq 'running') {

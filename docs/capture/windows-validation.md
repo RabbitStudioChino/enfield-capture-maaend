@@ -24,6 +24,8 @@ scripts\capture\capture.cmd probe
 
 `.cmd` 使用系统 PowerShell，并仅为本次子进程设置 `ExecutionPolicy Bypass`。运行时、虚拟环境、缓存和临时文件全部位于解压目录的 `local` 下。也可在 PowerShell 中运行以下命令。
 
+启动器在运行期间将 PowerShell 控制台与原生命令管道编码统一为 UTF-8，避免中文 Python 输出被按系统代码页错误解码；退出时恢复原有编码。该处理同时覆盖 `.cmd` 和直接调用 `.ps1` 的入口。
+
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\capture\capture.ps1 -Mode doctor
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\capture\capture.ps1 -Mode probe
@@ -86,6 +88,8 @@ local/validation/windows-capture/<run-id>/
 | 失焦、最小化或窗口身份变化 | 回到游戏前台并恢复窗口，再开始新的运行 |
 | 黑屏、空图或尺寸变化 | 返回失败帧原因，确认 HDR、窗口状态与固定分辨率后重新运行 |
 | 连接或截图超时 | 保留报告和工作进程日志，由报告确认 PID、退出原因与退出码 |
+
+本地控制页响应写入期间，如果浏览器刷新、关闭连接或接收超时，服务只结束该连接，不会在已开始的响应后再次写入错误响应。业务校验和文件读取失败仍正常返回错误；任务失败原因继续保留在检查点与任务日志中。
 
 ## SDK 与来源依据
 
