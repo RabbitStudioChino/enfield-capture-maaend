@@ -32,7 +32,6 @@ namespace
 
 constexpr double kYawTolerance = 3.0;
 constexpr double kStillDistance = 0.35;
-constexpr double kStillImageDifference = 1.5;
 constexpr int kStillReads = 3;
 constexpr auto kReadInterval = std::chrono::milliseconds(100);
 constexpr std::size_t kMaxRawBytes = 256 * 1024 * 1024;
@@ -193,10 +192,18 @@ bool photograph(MaaContext* context, const ViewParam& param, const std::filesyst
         return MaaTaskerStopping(MaaContextGetTasker(context));
     };
     std::optional<mapnavigator::NaviPosition> previous;
-    cv::Mat previous_thumbnail;
     int still_reads = 0;
+    json::object stability { { "method", "position_and_camera_heading" },
+                             { "stable_reads", 0 },
+                             { "required_reads", kStillReads },
+                             { "position_change_map_pixels", nullptr },
+                             { "heading_change_degrees", nullptr } };
     bool ready = false;
     while (!stopped() && std::chrono::steady_clock::now() < deadline) {
+        stability["stable_reads"] = 0;
+        stability["position_change_map_pixels"] = nullptr;
+        stability["heading_change_degrees"] = nullptr;
+        result["stability"] = stability;
         completed.reset();
         raw_image.release();
         mapnavigator::NaviPosition position;
@@ -240,19 +247,17 @@ bool photograph(MaaContext* context, const ViewParam& param, const std::filesyst
             still_reads = 0;
         }
         else {
-            cv::Mat thumbnail;
-            cv::resize(raw_image, thumbnail, cv::Size(128, 72), 0, 0, cv::INTER_AREA);
-            cv::cvtColor(thumbnail, thumbnail, cv::COLOR_BGR2GRAY);
-            cv::Mat difference;
-            if (!previous_thumbnail.empty()) {
-                cv::absdiff(thumbnail, previous_thumbnail, difference);
-            }
-            const bool still = previous && std::hypot(position.x - previous->x, position.y - previous->y) <= kStillDistance
-                               && std::abs(mapnavigator::NaviMath::calcDeltaRotation(previous->angle, position.angle)) <= 1.0
-                               && !difference.empty() && cv::mean(difference)[0] <= kStillImageDifference;
+            const double position_change = previous ? std::hypot(position.x - previous->x, position.y - previous->y) : 0.0;
+            const double heading_change =
+                previous ? std::abs(mapnavigator::NaviMath::calcDeltaRotation(previous->angle, position.angle)) : 0.0;
+            // Effects and animated actors can change pixels while position and camera heading remain still.
+            const bool still = previous && position_change <= kStillDistance && heading_change <= 1.0;
             still_reads = still ? still_reads + 1 : 1;
+            stability["stable_reads"] = still_reads;
+            stability["position_change_map_pixels"] = previous ? json::value(position_change) : json::value(nullptr);
+            stability["heading_change_degrees"] = previous ? json::value(heading_change) : json::value(nullptr);
+            result["stability"] = stability;
             previous = position;
-            previous_thumbnail = std::move(thumbnail);
             if (still_reads >= kStillReads) {
                 ready = true;
                 break;
@@ -261,7 +266,7 @@ bool photograph(MaaContext* context, const ViewParam& param, const std::filesyst
         std::this_thread::sleep_for(kReadInterval);
     }
     if (!ready || stopped() || std::chrono::steady_clock::now() >= deadline) {
-        throw std::runtime_error(stopped() ? "Photography stopped" : "Photography yaw, location or image did not settle before timeout");
+        throw std::runtime_error(stopped() ? "Photography stopped" : "Photography yaw or location did not settle before timeout");
     }
     int32_t width = 0;
     int32_t height = 0;

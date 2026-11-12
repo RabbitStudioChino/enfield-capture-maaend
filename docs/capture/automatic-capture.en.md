@@ -33,6 +33,10 @@ The list holds at most 100 entries in a file of up to 1 MiB. Saves use a file lo
 
 Return to the game during the five-second preparation period after starting or resuming, and keep the game in the foreground with its window visible and restored. The task enters the selected area through an existing teleport entry, navigates to samples through `MapNavigateAction`, and uses the native photography action to adjust camera heading in a closed loop and receive same-frame images and localization. The game screen, unlocked maps, unlocked teleports and current account state affect execution.
 
+Photography settling requires three consecutive valid position and camera-heading observations, with adjacent position changes no greater than 0.35 BaseNav map-image pixels and adjacent camera-heading changes no greater than 1°. Arrival radius, target heading, zone, black-screen, raw-resolution and same-frame localization checks remain enforced. Full-screen pixel changes from character animations, effects and moving objects no longer block settling. The native `result.json` records the method, consecutive observation count and last position and heading changes under `stability`. This check does not detect image blur or moving objects. Image selection and geometric quality still require later processing; settling does not constitute acceptance.
+
+After updating the native photography program, create a new task from a saved selection or the original parameters. Earlier tasks freeze the SHA-256 values of their native runtime files and cannot resume with a different native program version. Preserve earlier tasks, images and logs as existing records.
+
 ## Task controls and export
 
 The page displays the task ID, state, committed count, session, generation and local events. Pause, resume, stop or enter an earlier task ID to read its state. The navigation executor releases input and acknowledges commands. Pausing an automatic task closes its native connection. Resume uses a new session and clock while continuing the committed count. Committed batches remain immutable.
