@@ -21,7 +21,7 @@ from .planner import build_plan, selection_parameters, validate_polygon
 from .probe import utc_now
 from .regions import SOURCE_ROOT, region_catalog, resource_hashes
 from .task import check_path, encoded, exclusive, read_json, task_path, valid_id, write_json
-from .validate import load_json, require
+from .validate import load_json, read_verified, require
 
 WEB_ROOT = Path(__file__).with_name("web")
 SHARED_ROOT = SOURCE_ROOT / "tools/MapNavigator/web/static/js"
@@ -30,6 +30,8 @@ STATIC_FILES.update(
     {f"/shared/{name}": SHARED_ROOT / name for name in ("camera.js", "map_view.js", "navmesh_3d_data.js")}
 )
 MAX_BODY = 128 * 1024
+MAX_REVIEW_BODY = 4 * 1024 * 1024
+REVIEW_IMPORT_ROUTES = {"/api/project/import", "/api/rescan/preview", "/api/rescan/start"}
 MAX_SELECTION_BYTES = 1024 * 1024
 MAX_SELECTIONS = 100
 SELECTION_SCHEMA = "capture.saved-selections/1.0"
@@ -83,12 +85,120 @@ class CaptureApplication:
         check_path(self.local).mkdir(exist_ok=True)
         self.directory = check_path(self.local / "capture-ui")
         self.directory.mkdir(exist_ok=True)
-        for name in ("plans", "logs", "mesh", "tmp"):
+        for name in ("plans", "logs", "mesh", "tmp", "imports"):
             check_path(self.directory / name).mkdir(exist_ok=True)
         self.token = secrets.token_urlsafe(32)
         self.children = {}
         self.lock = threading.Lock()
         self.mesh_lock = threading.Lock()
+        self.evidence = {}
+
+    def workspace_path(self, value):
+        require(isinstance(value, str) and value.strip(), "需要工作区内的路径")
+        path = Path(value)
+        path = check_path(path if path.is_absolute() else self.workspace / path)
+        require(path.is_relative_to(self.workspace), "路径必须位于当前工作区")
+        return path
+
+    def projects(self):
+        from tools.reconstruction.project import project_status
+
+        parent = check_path(self.local / "reconstruction-projects")
+        records = []
+        for path in sorted(parent.glob("*/project.json"))[-100:]:
+            check_path(path)
+            try:
+                result = project_status(self.workspace, valid_id(path.parent.name))
+                records.append({key: result.get(key) for key in ("project_id", "status", "stop_reason")})
+            except (OSError, ValueError, KeyError, TypeError) as error:
+                records.append({"project_id": path.parent.name, "status": "unreadable", "stop_reason": str(error)})
+        return {"projects": records}
+
+    def project_status(self, identity):
+        from tools.reconstruction.project import project_status
+
+        return project_status(self.workspace, valid_id(identity))
+
+    def export_review(self, request):
+        from tools.reconstruction.project import export_review
+
+        return export_review(
+            self.workspace,
+            valid_id(request.get("project")),
+            valid_id(request.get("round")),
+            "review-" + uuid.uuid4().hex[:20],
+        )
+
+    def rescan_document(self, request):
+        raw = request.get("document")
+        require(isinstance(raw, str) and len(raw.encode("utf-8")) <= MAX_REVIEW_BODY, "请导入不超过 4 MiB 的审阅 JSON")
+        document = load_json(raw.encode("utf-8"), "导入的审阅/补采 JSON")
+        require(isinstance(document, dict), "导入内容必须是 JSON 对象")
+        if document.get("schema_version") == "reconstruction.review-result/1.0":
+            require(isinstance(document.get("rescan"), dict), "审阅结果没有补采请求，可仅存档审阅结果")
+            document = document["rescan"]
+        require(len(encoded(document)) <= MAX_BODY, "补采请求本身超出 128 KiB，请缩小本轮动作和证据清单")
+        return document
+
+    def preview_rescan(self, request):
+        from .rescan import preview_rescan
+
+        document = self.rescan_document(request)
+        review = self.workspace_path(request.get("review"))
+        bundle = self.workspace_path(request.get("bundle"))
+        result = preview_rescan(self.workspace, document, review, bundle)
+        images = {}
+        # Only hash-verified images from the review's frozen sources become browser URLs.
+        for issue in result.get("issues", []):
+            issue["images"] = []
+            for evidence in issue.pop("evidence_images", []):
+                path = self.workspace_path(evidence["image_uri"])
+                require(path.suffix.lower() in (".png", ".jpg", ".jpeg"), "证据图像格式不受支持")
+                require(path.stat().st_size <= 32 * 1024 * 1024, "证据图像超出 32 MiB")
+                read_verified(path, evidence["sha256"], False)
+                identity = uuid.uuid4().hex
+                images[identity] = (path, evidence["sha256"])
+                issue["images"].append(
+                    {
+                        "session_id": evidence["session_id"],
+                        "frame_id": evidence["frame_id"],
+                        "url": "/api/rescan-evidence?id=" + identity,
+                    }
+                )
+        with self.lock:
+            self.evidence = images
+        return result
+
+    def evidence_image(self, identity):
+        with self.lock:
+            record = self.evidence.get(identity)
+        require(record is not None, "证据预览已过期，请重新校验补采 JSON")
+        path, expected_hash = record
+        require(path.stat().st_size <= 32 * 1024 * 1024, "证据图像超出 32 MiB")
+        return read_verified(check_path(path), expected_hash, True), mimetypes.guess_type(path.name)[0]
+
+    def import_review(self, request):
+        from tools.reconstruction.project import import_review
+
+        raw = request.get("document")
+        require(isinstance(raw, str), "需要审阅 JSON 原文")
+        document = load_json(raw.encode("utf-8"), "审阅结果")
+        require(isinstance(document, dict), "审阅结果必须是对象")
+        project = valid_id(request.get("project"))
+        path = check_path(self.directory / "imports" / (uuid.uuid4().hex + ".json"))
+        write_json(path, document)
+        return import_review(self.workspace, project, path)
+
+    def start_rescan(self, request):
+        from .rescan import resolve_rescan
+
+        plan = resolve_rescan(
+            self.workspace,
+            self.rescan_document(request),
+            self.workspace_path(request.get("review")),
+            self.workspace_path(request.get("bundle")),
+        )
+        return self.launch_plan(plan, request.get("task"))
 
     def selections(self):
         path = check_path(self.directory / "selections.json")
@@ -208,7 +318,10 @@ class CaptureApplication:
     def start(self, request):
         require(isinstance(request, dict), "请求必须是 JSON 对象")
         plan = build_plan(self.workspace, request)
-        task_id = request.get("task") or "auto-" + uuid.uuid4().hex[:20]
+        return self.launch_plan(plan, request.get("task"))
+
+    def launch_plan(self, plan, task_id=None):
+        task_id = task_id or "auto-" + uuid.uuid4().hex[:20]
         valid_id(task_id)
         require(not task_path(self.workspace, task_id).exists(), "任务 ID 已存在，请恢复旧任务或使用新 ID")
         path = self.directory / "plans" / f"{plan['plan_id']}.json"
@@ -355,6 +468,13 @@ class CaptureHandler(BaseHTTPRequestHandler):
                 self.send_json(region_catalog())
             elif route.path == "/api/selections":
                 self.send_json({"selections": app.selections()})
+            elif route.path == "/api/projects":
+                self.send_json(app.projects())
+            elif route.path == "/api/project/status":
+                self.send_json(app.project_status(query.get("project", [""])[0]))
+            elif route.path == "/api/rescan-evidence":
+                data, media = app.evidence_image(query.get("id", [""])[0])
+                self.send_data(data, media)
             elif route.path == "/api/zones":
                 from .navigation_worker import query_navigation
 
@@ -379,7 +499,7 @@ class CaptureHandler(BaseHTTPRequestHandler):
                 self.send_data(b"", "image/x-icon", 204)
             else:
                 self.send_json({"error": "未知端点"}, 404)
-        except (OSError, ValueError, KeyError, RuntimeError, subprocess.TimeoutExpired) as error:
+        except (OSError, ValueError, KeyError, TypeError, RuntimeError, subprocess.TimeoutExpired) as error:
             self.send_json({"error": str(error)}, 400)
 
     def do_POST(self):
@@ -390,11 +510,12 @@ class CaptureHandler(BaseHTTPRequestHandler):
             lengths = self.headers.get_all("Content-Length", [])
             require(len(lengths) == 1 and lengths[0].isascii() and lengths[0].isdigit(), "需要唯一 Content-Length")
             size = int(lengths[0])
-            require(0 < size <= MAX_BODY, "请求体超出 128 KiB")
+            route = urlsplit(self.path).path
+            maximum = MAX_REVIEW_BODY if route in REVIEW_IMPORT_ROUTES else MAX_BODY
+            require(0 < size <= maximum, f"请求体必须在 1 至 {maximum} 字节内")
             body = load_json(self.rfile.read(size), "request")
             require(isinstance(body, dict), "请求必须是 JSON 对象")
             app = self.server.application
-            route = urlsplit(self.path).path
             if route == "/api/preview":
                 self.send_json(build_plan(app.workspace, body))
             elif route == "/api/selections":
@@ -405,6 +526,14 @@ class CaptureHandler(BaseHTTPRequestHandler):
                 self.send_json(app.delete_selection(selection_text(body.get("id"), "选区 ID", 32)))
             elif route == "/api/start":
                 self.send_json(app.start(body), 202)
+            elif route == "/api/project/review-export":
+                self.send_json(app.export_review(body), 201)
+            elif route == "/api/project/import":
+                self.send_json(app.import_review(body), 201)
+            elif route == "/api/rescan/preview":
+                self.send_json(app.preview_rescan(body))
+            elif route == "/api/rescan/start":
+                self.send_json(app.start_rescan(body), 202)
             elif route == "/api/control":
                 action = body.get("action")
                 require(action in ("pause", "stop", "resume"), "未知控制动作")

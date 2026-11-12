@@ -103,6 +103,53 @@
           <summary>任务事件</summary>
           <pre id="events">等待任务</pre>
         </details>
+        <section class="project-panel" aria-labelledby="project-title">
+          <h2 id="project-title">重建工程与补采</h2>
+          <p class="hint">
+            在离线制作机用工程 CLI 创建和重建。此处读取工程、导出给外部 GPT 的审阅包，并校验返回的补采请求。
+          </p>
+          <div class="row">
+            <label
+              >已有工程<select id="project">
+                <option value="">选择本地工程</option>
+              </select></label
+            >
+            <button id="project-refresh" type="button">刷新工程</button>
+          </div>
+          <p id="project-state" class="hint" role="status">尚未读取工程</p>
+          <div id="project-rounds"></div>
+          <div class="row">
+            <label
+              >审阅轮次<select id="project-round">
+                <option value="">选择轮次</option>
+              </select></label
+            >
+            <button id="review-export" type="button">导出 GPT 审阅包</button>
+          </div>
+          <p id="review-export-result" class="hint" role="status"></p>
+          <label for="review-path">审阅来源 review.json（工作区内路径）</label>
+          <input id="review-path" placeholder="导出后自动填入，也可输入已有审阅包路径" />
+          <label for="rescan-bundle">来源冻结包目录（工作区内路径）</label>
+          <input id="rescan-bundle" placeholder="选择审阅包对应的采集冻结包" list="review-bundles" />
+          <datalist id="review-bundles"></datalist>
+          <label for="rescan-file">外部 GPT 返回的审阅结果或补采 JSON</label>
+          <input id="rescan-file" type="file" accept="application/json,.json" />
+          <textarea
+            id="rescan-document"
+            rows="6"
+            aria-label="审阅或补采 JSON 原文"
+            placeholder="也可粘贴完整 JSON；校验预览不控制游戏、不创建采集任务。"></textarea>
+          <div class="row actions">
+            <button id="rescan-preview" type="button">校验并预览补采</button>
+            <button id="review-import" type="button">存档审阅结果</button>
+            <button id="rescan-start" class="primary" type="button" disabled>开始补采</button>
+          </div>
+          <p id="rescan-state" class="hint" role="status">
+            先导入并校验。开始时会重新校验来源、预算和真实导航可达性，再使用当前任务区的暂停、恢复、停止和进度。
+          </p>
+          <div id="rescan-issues"></div>
+          <div id="rescan-actions"></div>
+        </section>
       </section>
     </main>
     <footer id="workspace">所有输出保存在工作区 local/。本页展示采集控制和地图路线。</footer>

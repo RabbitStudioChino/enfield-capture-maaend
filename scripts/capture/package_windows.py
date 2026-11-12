@@ -154,7 +154,13 @@ def package(args):
                 path = Path(base) / name
                 add(prefix + "/" + path.relative_to(directory).as_posix(), path)
 
-    for prefix in ("tools/capture", "contracts/capture", "docs/capture"):
+    for prefix in (
+        "tools/capture",
+        "tools/reconstruction",
+        "contracts/capture",
+        "contracts/reconstruction",
+        "docs/capture",
+    ):
         tree(SOURCE_ROOT / prefix, prefix)
     for uri in (
         "tools/capture/server.py",
@@ -164,6 +170,9 @@ def package(args):
         "tools/capture/navigation_worker.py",
         "tools/capture/web/app.js",
         "tools/capture/web/index.html",
+        "tools/capture/rescan.py",
+        "tools/reconstruction/project.py",
+        "tools/reconstruction/__main__.py",
     ):
         if uri not in files:
             raise ValueError(f"Missing automatic capture source: {uri}")
@@ -219,6 +228,8 @@ def package(args):
             f"Official PSF Python 3.12.10 x64 archive {PYTHON_URL}\nArchive SHA-256 {PYTHON_SHA256}\n"
             "Python license is included verbatim and also remains in the official archive.\n"
             "Run Start-Region-Capture.cmd and read docs/capture/automatic-capture.md or its English counterpart.\n"
+            "Offline reconstruction and GPT review/rescan project commands are included in tools/reconstruction; read docs/capture/reconstruction-pipeline.md.\n"
+            "COLMAP/OpenMVS executables are separate workstation tools and are not bundled in this capture delivery.\n"
             "All locked Windows Python dependency wheels are bundled in local/cache/wheels and installed offline with hash verification.\n"
             "Later launches reuse the prepared environment while Python and the dependency lock are unchanged.\n"
             "Tests, simulations and device validation were explicitly skipped for this feature. Build completion is not acceptance.\n"

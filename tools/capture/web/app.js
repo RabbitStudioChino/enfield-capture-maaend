@@ -8,7 +8,7 @@ const context = canvas.getContext("2d");
 const camera = new Camera();
 const parameterInputs = {radius: "radius", spacing: "spacing", views: "views", max_points: "max-points"};
 const exclusiveControls =
-  "#capture-form input, #capture-form select, #capture-form button, .toolbar input, .toolbar select, .toolbar button, #saved-selections button, #export, #load-task";
+  "#capture-form input, #capture-form select, #capture-form button, .toolbar input, .toolbar select, .toolbar button, #saved-selections button, #export, #load-task, .project-panel input, .project-panel textarea, .project-panel select, .project-panel button";
 const state = {
   catalog: null,
   region: null,
@@ -28,6 +28,9 @@ const state = {
   events: [],
   sessions: new Set(),
   mapGeneration: 0,
+  project: null,
+  rescan: null,
+  rescanInput: "",
 };
 let token = "";
 let drag = null;
@@ -306,8 +309,158 @@ async function operation(callback, exclusive = true, feedback = message) {
     if (exclusive) {
       busy = false;
       for (const element of document.querySelectorAll(exclusiveControls)) element.disabled = false;
+      updateRescanStart();
     }
   }
+}
+
+function textLine(parent, text, tag = "p") {
+  const element = document.createElement(tag);
+  element.textContent = text;
+  parent.append(element);
+  return element;
+}
+
+function rescanRequest() {
+  return {
+    document: $("rescan-document").value,
+    review: $("review-path").value.trim(),
+    bundle: $("rescan-bundle").value.trim(),
+  };
+}
+
+function updateRescanStart() {
+  $("rescan-start").disabled =
+    busy || !state.rescan?.executable || state.rescanInput !== JSON.stringify(rescanRequest());
+}
+
+function invalidateRescan() {
+  state.rescan = null;
+  state.rescanInput = "";
+  $("rescan-issues").replaceChildren();
+  $("rescan-actions").replaceChildren();
+  $("rescan-state").textContent = "来源或 JSON 已更新，请重新校验预览。";
+  $("rescan-state").classList.remove("error");
+  updateRescanStart();
+}
+
+function useReview(result) {
+  if (result.review_file) $("review-path").value = result.review_file;
+  const bundles = result.bundle_paths || [];
+  $("review-bundles").replaceChildren();
+  for (const source of bundles) $("review-bundles").append(new Option(source.source_id || source.path, source.path));
+  if (bundles.length) $("rescan-bundle").value = (bundles.find((source) => source.automatic_rescan) || bundles[0]).path;
+  invalidateRescan();
+}
+
+async function refreshProject() {
+  const identity = $("project").value;
+  if (!identity) {
+    state.project = null;
+    $("project-state").textContent = "尚未选择工程。在离线重建 CLI 创建工程后可刷新列表。";
+    $("project-rounds").replaceChildren();
+    $("project-round").replaceChildren(new Option("选择轮次", ""));
+    return;
+  }
+  const project = await api(`/api/project/status?project=${encodeURIComponent(identity)}`);
+  state.project = project;
+  $("project-state").textContent =
+    `${project.project_id} · ${project.status} · 停止原因：${project.stop_reason || "无"}\n预算 ${JSON.stringify(project.budget || {})} · 测试和实机验收未执行`;
+  $("project-rounds").replaceChildren();
+  const selected = $("project-round").value;
+  $("project-round").replaceChildren(new Option("选择轮次", ""));
+  for (const round of project.rounds || []) {
+    const card = document.createElement("article");
+    card.className = "round-card";
+    textLine(card, `${round.round_id} · ${round.status} · 重建 ${round.run_id || "待开始"}`, "strong");
+    textLine(card, `停止原因：${round.stop_reason || "无"}`);
+    if (round.quality) textLine(card, `本轮质量：${JSON.stringify(round.quality, null, 2)}`);
+    if (round.review) textLine(card, `审阅：${JSON.stringify(round.review, null, 2)}`);
+    if (round.remaining_issues) textLine(card, `剩余问题：${JSON.stringify(round.remaining_issues, null, 2)}`);
+    $("project-rounds").append(card);
+    $("project-round").add(new Option(`${round.round_id} · ${round.status}`, round.round_id));
+  }
+  if ([...$("project-round").options].some((option) => option.value === selected)) $("project-round").value = selected;
+  else if (project.rounds?.length) $("project-round").value = project.rounds.at(-1).round_id;
+  if (!$("review-path").value) useRoundReview();
+}
+
+function useRoundReview() {
+  const round = state.project?.rounds.find((item) => item.round_id === $("project-round").value);
+  if (round?.review) useReview({...round.review, bundle_paths: round.bundle_paths});
+}
+
+async function loadProjects() {
+  const selected = $("project").value;
+  const {projects} = await api("/api/projects");
+  $("project").replaceChildren(new Option("选择本地工程", ""));
+  for (const project of projects)
+    $("project").add(new Option(`${project.project_id} · ${project.status}`, project.project_id));
+  if (projects.some((project) => project.project_id === selected)) $("project").value = selected;
+  else if (projects.length === 1) $("project").value = projects[0].project_id;
+  await refreshProject();
+}
+
+function showRescan(result) {
+  state.rescan = result;
+  state.rescanInput = JSON.stringify(rescanRequest());
+  const labels = {ready: "可执行", invalid: "无效", duplicate: "重复", unmapped: "待映射"};
+  const counts = {};
+  for (const action of result.actions || []) counts[action.status] = (counts[action.status] || 0) + 1;
+  $("rescan-state").textContent =
+    `${result.executable ? "校验通过，可开始补采" : "当前请求不可执行"} · ${Object.entries(labels)
+      .map(
+        ([
+          key,
+          label,
+        ]) => `${label} ${counts[key] || 0}`,
+      )
+      .join(
+        " · ",
+      )}\n${(result.errors || []).join("\n")}\n纯文件预览尚未验证游戏中的可达性。开始时会重新规划，失败不会发送游戏输入。`;
+  $("rescan-state").classList.toggle("error", !result.executable);
+  $("rescan-issues").replaceChildren();
+  $("rescan-actions").replaceChildren();
+  for (const issue of result.issues || []) {
+    const card = document.createElement("article");
+    card.className = "rescan-card";
+    textLine(card, `问题 ${issue.issue_id}`, "strong");
+    textLine(card, issue.description || issue.problem || "待补充问题说明");
+    textLine(
+      card,
+      `证据：${(issue.evidence || []).map((item) => `${item.session_id}/${item.frame_id}`).join("、") || "未提供"}`,
+    );
+    const gallery = document.createElement("div");
+    gallery.className = "evidence-images";
+    for (const evidence of issue.images || []) {
+      const figure = document.createElement("figure");
+      const image = document.createElement("img");
+      image.src = evidence.url;
+      image.alt = `证据 ${evidence.session_id}/${evidence.frame_id}`;
+      image.loading = "lazy";
+      figure.append(image);
+      textLine(figure, `${evidence.session_id}/${evidence.frame_id}`, "figcaption");
+      gallery.append(figure);
+    }
+    card.append(gallery);
+    $("rescan-issues").append(card);
+  }
+  for (const action of result.actions || []) {
+    const card = document.createElement("article");
+    card.className = "rescan-card";
+    card.dataset.status = action.status;
+    textLine(card, `${action.action_id || "动作"} · ${labels[action.status] || action.status}`, "strong");
+    textLine(
+      card,
+      `对应问题 ${action.issue_id || "未知"} · 目标 ${action.target_candidate_id || "待映射"} · 方向 ${action.heading_degrees ?? "未知"}°`,
+    );
+    textLine(card, `原因：${action.reason || "未提供"}`);
+    if (action.error || action.errors?.length) textLine(card, `校验：${action.error || action.errors.join("；")}`);
+    if (action.position_xy)
+      textLine(card, `BaseNav 目标 ${action.position_xy.join(", ")} · 层高 ${action.target_deck_y ?? "未知"}`);
+    $("rescan-actions").append(card);
+  }
+  updateRescanStart();
 }
 
 async function showPlan(plan) {
@@ -625,12 +778,98 @@ $("export").addEventListener(
       message("冻结包已导出并通过格式与文件完整性校验，图像几何质量待审。");
     }),
 );
+$("project-refresh").addEventListener("click", () => void operation(loadProjects));
+$("project").addEventListener(
+  "change",
+  () =>
+    void operation(async () => {
+      $("review-path").value = "";
+      $("rescan-bundle").value = "";
+      $("review-bundles").replaceChildren();
+      invalidateRescan();
+      await refreshProject();
+    }),
+);
+$("project-round").addEventListener("change", useRoundReview);
+$("review-export").addEventListener(
+  "click",
+  () =>
+    void operation(async () => {
+      if (!$("project").value || !$("project-round").value) throw new Error("请先选择工程和已完成的轮次。");
+      const result = await api("/api/project/review-export", {
+        project: $("project").value,
+        round: $("project-round").value,
+      });
+      useReview(result);
+      $("review-export-result").textContent =
+        `审阅包目录：${result.path}\n响应模板：${result.response_template}\n将整个审阅包交给外部 GPT，返回结果后在此导入。外部审阅尚未执行。`;
+      await refreshProject();
+    }),
+);
+for (const id of [
+  "review-path",
+  "rescan-bundle",
+  "rescan-document",
+])
+  $(id).addEventListener("input", invalidateRescan);
+$("rescan-file").addEventListener(
+  "change",
+  () =>
+    void operation(async () => {
+      invalidateRescan();
+      const file = $("rescan-file").files[0];
+      if (!file) return;
+      if (file.size > 4 * 1024 * 1024) throw new Error("审阅 JSON 文件最多 4 MiB；补采请求部分最多 128 KiB。");
+      $("rescan-document").value = await file.text();
+      message("JSON 已读入。点击校验预览后才会判断可执行性。");
+    }),
+);
+$("rescan-preview").addEventListener(
+  "click",
+  () =>
+    void operation(async () => {
+      invalidateRescan();
+      showRescan(await api("/api/rescan/preview", rescanRequest()));
+    }),
+);
+$("review-import").addEventListener(
+  "click",
+  () =>
+    void operation(async () => {
+      if (!$("project").value) throw new Error("请先选择要保存审阅结果的工程。");
+      const result = await api("/api/project/import", {
+        project: $("project").value,
+        document: $("rescan-document").value,
+      });
+      useReview(result);
+      await refreshProject();
+      message(`审阅结果已存档：${result.path}。需要补采时请重新校验预览。`);
+    }),
+);
+$("rescan-start").addEventListener(
+  "click",
+  () =>
+    void operation(async () => {
+      if (!state.rescan?.executable || state.rescanInput !== JSON.stringify(rescanRequest()))
+        throw new Error("请先对当前 JSON 和来源完成校验预览。");
+      message("正在重新校验补采来源并规划真实可达目标…");
+      const result = await api("/api/rescan/start", rescanRequest());
+      state.rescan = null;
+      selectTask(result.task_id);
+      message(`${result.message}\n补采使用当前任务的暂停、恢复、停止和进度。\n启动日志 ${result.launch_log}`);
+      await refresh();
+      await showPlan(result.plan);
+    }),
+);
 new ResizeObserver(render).observe(canvas);
 
 async function initialize() {
   void loadSelections();
   const config = await api("/api/config");
   token = config.token;
+  void loadProjects().catch((error) => {
+    $("project-state").textContent = `工程列表暂不可读：${error.message}`;
+  });
   $("workspace").textContent = `工作区 ${config.workspace} · 所有采集数据、计划与日志保存在 local/`;
   state.catalog = await api("/api/catalog");
   for (const frame of state.catalog.maps) $("map").add(new Option(frame.name, frame.id));

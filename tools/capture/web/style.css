@@ -264,6 +264,74 @@ footer {
   border-top: 1px solid #344248;
   overflow-wrap: anywhere;
 }
+.project-panel {
+  border: 1px solid #344248;
+  border-radius: 9px;
+  padding: 16px;
+}
+.project-panel h2 {
+  margin: 0 0 10px;
+  font-size: 17px;
+}
+.project-panel .row {
+  align-items: end;
+}
+.project-panel .row > label {
+  flex: 1;
+  min-width: 0;
+}
+.project-panel textarea {
+  width: 100%;
+  resize: vertical;
+  margin-top: 8px;
+  border: 1px solid #46575f;
+  border-radius: 5px;
+  padding: 9px;
+  background: #142127;
+  color: #e2eeeb;
+  font: 12px/1.5 monospace;
+}
+.round-card,
+.rescan-card {
+  border-left: 3px solid #526e79;
+  padding: 10px;
+  margin: 10px 0;
+  background: #142127;
+  overflow-wrap: anywhere;
+}
+.rescan-card p,
+.round-card p {
+  margin: 5px 0;
+  white-space: pre-wrap;
+  font-size: 13px;
+}
+.rescan-card[data-status="ready"] {
+  border-color: #56c9bb;
+}
+.rescan-card[data-status="invalid"],
+#rescan-state.error {
+  color: #efad83;
+}
+.evidence-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.evidence-images figure {
+  margin: 8px 0;
+  max-width: 260px;
+  min-width: 0;
+}
+.evidence-images img {
+  display: block;
+  width: 100%;
+  max-height: 180px;
+  object-fit: contain;
+}
+.evidence-images figcaption {
+  font-size: 11px;
+  color: #9cb0b4;
+}
 @media (max-width: 850px) {
   main {
     grid-template-columns: 1fr;
