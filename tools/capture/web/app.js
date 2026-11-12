@@ -418,6 +418,9 @@ function showRescan(result) {
       .join(
         " · ",
       )}\n${(result.errors || []).join("\n")}\n纯文件预览尚未验证游戏中的可达性。开始时会重新规划，失败不会发送游戏输入。`;
+  if (result.budget)
+    $("rescan-state").textContent +=
+      `\n照片已并入 ${result.budget.captured_images} · 任务预留 ${result.budget.reserved_images} · 可新增 ${result.budget.remaining_images} · 已使用补采动作 ${result.budget.rescan_actions_used}`;
   $("rescan-state").classList.toggle("error", !result.executable);
   $("rescan-issues").replaceChildren();
   $("rescan-actions").replaceChildren();

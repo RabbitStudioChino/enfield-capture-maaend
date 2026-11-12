@@ -1,0 +1,430 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://schemas.endfield.local/reconstruction/1.0/review.schema.json",
+    "type": "object",
+    "required": [
+        "schema_version",
+        "project_id",
+        "round_id",
+        "review_id",
+        "reconstruction_revision",
+        "region_id",
+        "sources",
+        "evidence",
+        "frame_index",
+        "regions",
+        "coverage",
+        "issues",
+        "quality",
+        "response_template",
+        "files",
+        "geometry_acceptance",
+        "threshold_status"
+    ],
+    "properties": {
+        "schema_version": {
+            "const": "reconstruction.review/1.0"
+        },
+        "project_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+        },
+        "round_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+        },
+        "review_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+        },
+        "reconstruction_revision": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+        },
+        "region_id": {
+            "type": "string",
+            "minLength": 1
+        },
+        "sources": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": [
+                    "bundle_sha256",
+                    "auto_plan_sha256",
+                    "catalog_sha256",
+                    "resources_sha256",
+                    "region_id",
+                    "session_id",
+                    "bundle_uri",
+                    "candidates",
+                    "automatic_rescan"
+                ],
+                "properties": {
+                    "bundle_sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "auto_plan_sha256": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "pattern": "^[0-9a-f]{64}$"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "catalog_sha256": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "pattern": "^[0-9a-f]{64}$"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "resources_sha256": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "pattern": "^[0-9a-f]{64}$"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "region_id": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "session_id": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "bundle_uri": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "candidates": {
+                        "type": "array",
+                        "items": {
+                            "type": "object"
+                        }
+                    },
+                    "automatic_rescan": {
+                        "type": "boolean"
+                    }
+                },
+                "additionalProperties": false
+            },
+            "minItems": 1
+        },
+        "evidence": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": [
+                    "session_id",
+                    "frame_id",
+                    "image_uri",
+                    "image_sha256",
+                    "bundle_sha256",
+                    "package_image_uri"
+                ],
+                "properties": {
+                    "session_id": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "frame_id": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "image_uri": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "image_sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "bundle_sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "package_image_uri": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "minLength": 1
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    }
+                },
+                "additionalProperties": false
+            }
+        },
+        "frame_index": {
+            "type": "string",
+            "minLength": 1
+        },
+        "regions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": [
+                    "region_id",
+                    "frame_ids",
+                    "review_status"
+                ],
+                "properties": {
+                    "region_id": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "frame_ids": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "required": [
+                                "session_id",
+                                "frame_id"
+                            ],
+                            "properties": {
+                                "session_id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                },
+                                "frame_id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                }
+                            },
+                            "additionalProperties": false
+                        }
+                    },
+                    "review_status": {
+                        "const": "unreviewed"
+                    }
+                },
+                "additionalProperties": false
+            }
+        },
+        "coverage": {
+            "type": "object",
+            "required": [
+                "reviewed",
+                "unreviewed",
+                "failed",
+                "regions"
+            ],
+            "properties": {
+                "reviewed": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "required": [
+                            "session_id",
+                            "frame_id"
+                        ],
+                        "properties": {
+                            "session_id": {
+                                "type": "string",
+                                "minLength": 1
+                            },
+                            "frame_id": {
+                                "type": "string",
+                                "minLength": 1
+                            }
+                        },
+                        "additionalProperties": false
+                    }
+                },
+                "unreviewed": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "required": [
+                            "session_id",
+                            "frame_id"
+                        ],
+                        "properties": {
+                            "session_id": {
+                                "type": "string",
+                                "minLength": 1
+                            },
+                            "frame_id": {
+                                "type": "string",
+                                "minLength": 1
+                            }
+                        },
+                        "additionalProperties": false
+                    }
+                },
+                "failed": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "required": [
+                            "session_id",
+                            "frame_id"
+                        ],
+                        "properties": {
+                            "session_id": {
+                                "type": "string",
+                                "minLength": 1
+                            },
+                            "frame_id": {
+                                "type": "string",
+                                "minLength": 1
+                            }
+                        },
+                        "additionalProperties": false
+                    }
+                },
+                "regions": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "required": [
+                            "region_id",
+                            "status"
+                        ],
+                        "properties": {
+                            "region_id": {
+                                "type": "string",
+                                "minLength": 1
+                            },
+                            "status": {
+                                "enum": [
+                                    "reviewed",
+                                    "unreviewed",
+                                    "failed"
+                                ]
+                            }
+                        },
+                        "additionalProperties": false
+                    }
+                }
+            },
+            "additionalProperties": false
+        },
+        "issues": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": [
+                    "issue_id",
+                    "classification",
+                    "description",
+                    "evidence",
+                    "status"
+                ],
+                "properties": {
+                    "issue_id": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+                    },
+                    "classification": {
+                        "enum": [
+                            "source_image_quality",
+                            "insufficient_observation",
+                            "difficult_material",
+                            "localization_or_tool_failure",
+                            "insufficient_evidence"
+                        ]
+                    },
+                    "description": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "evidence": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "required": [
+                                "session_id",
+                                "frame_id"
+                            ],
+                            "properties": {
+                                "session_id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                },
+                                "frame_id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                }
+                            },
+                            "additionalProperties": false
+                        }
+                    },
+                    "status": {
+                        "enum": [
+                            "unresolved",
+                            "resolved",
+                            "informational"
+                        ]
+                    },
+                    "origin": {
+                        "enum": [
+                            "measured",
+                            "external_review"
+                        ]
+                    }
+                },
+                "additionalProperties": false
+            }
+        },
+        "quality": {
+            "type": "string",
+            "minLength": 1
+        },
+        "response_template": {
+            "type": "string",
+            "minLength": 1
+        },
+        "files": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": [
+                    "uri",
+                    "sha256",
+                    "bytes"
+                ],
+                "properties": {
+                    "uri": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "bytes": {
+                        "type": "integer",
+                        "minimum": 0
+                    }
+                },
+                "additionalProperties": false
+            },
+            "minItems": 1
+        },
+        "geometry_acceptance": {
+            "const": "not_assessed"
+        },
+        "threshold_status": {
+            "const": "project_policy_not_calibrated"
+        }
+    },
+    "additionalProperties": false
+}

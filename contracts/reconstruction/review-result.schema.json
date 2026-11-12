@@ -1,0 +1,227 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://schemas.endfield.local/reconstruction/1.0/review-result.schema.json",
+    "type": "object",
+    "required": [
+        "schema_version",
+        "project_id",
+        "round_id",
+        "review_id",
+        "reconstruction_revision",
+        "reviewer",
+        "coverage",
+        "issues",
+        "accepted_models",
+        "rescan"
+    ],
+    "properties": {
+        "schema_version": {
+            "const": "reconstruction.review-result/1.0"
+        },
+        "project_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+        },
+        "round_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+        },
+        "review_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+        },
+        "reconstruction_revision": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+        },
+        "reviewer": {
+            "type": "string",
+            "pattern": "\\S"
+        },
+        "coverage": {
+            "type": "object",
+            "required": [
+                "reviewed",
+                "unreviewed",
+                "failed",
+                "regions"
+            ],
+            "properties": {
+                "reviewed": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "required": [
+                            "session_id",
+                            "frame_id"
+                        ],
+                        "properties": {
+                            "session_id": {
+                                "type": "string",
+                                "minLength": 1
+                            },
+                            "frame_id": {
+                                "type": "string",
+                                "minLength": 1
+                            }
+                        },
+                        "additionalProperties": false
+                    }
+                },
+                "unreviewed": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "required": [
+                            "session_id",
+                            "frame_id"
+                        ],
+                        "properties": {
+                            "session_id": {
+                                "type": "string",
+                                "minLength": 1
+                            },
+                            "frame_id": {
+                                "type": "string",
+                                "minLength": 1
+                            }
+                        },
+                        "additionalProperties": false
+                    }
+                },
+                "failed": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "required": [
+                            "session_id",
+                            "frame_id"
+                        ],
+                        "properties": {
+                            "session_id": {
+                                "type": "string",
+                                "minLength": 1
+                            },
+                            "frame_id": {
+                                "type": "string",
+                                "minLength": 1
+                            }
+                        },
+                        "additionalProperties": false
+                    }
+                },
+                "regions": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "required": [
+                            "region_id",
+                            "status"
+                        ],
+                        "properties": {
+                            "region_id": {
+                                "type": "string",
+                                "minLength": 1
+                            },
+                            "status": {
+                                "enum": [
+                                    "reviewed",
+                                    "unreviewed",
+                                    "failed"
+                                ]
+                            }
+                        },
+                        "additionalProperties": false
+                    }
+                }
+            },
+            "additionalProperties": false
+        },
+        "issues": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": [
+                    "issue_id",
+                    "classification",
+                    "description",
+                    "evidence",
+                    "status"
+                ],
+                "properties": {
+                    "issue_id": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+                    },
+                    "classification": {
+                        "enum": [
+                            "source_image_quality",
+                            "insufficient_observation",
+                            "difficult_material",
+                            "localization_or_tool_failure",
+                            "insufficient_evidence"
+                        ]
+                    },
+                    "description": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "evidence": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "required": [
+                                "session_id",
+                                "frame_id"
+                            ],
+                            "properties": {
+                                "session_id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                },
+                                "frame_id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                }
+                            },
+                            "additionalProperties": false
+                        }
+                    },
+                    "status": {
+                        "enum": [
+                            "unresolved",
+                            "resolved",
+                            "informational"
+                        ]
+                    },
+                    "origin": {
+                        "enum": [
+                            "measured",
+                            "external_review"
+                        ]
+                    }
+                },
+                "additionalProperties": false
+            }
+        },
+        "accepted_models": {
+            "type": "array",
+            "items": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+            },
+            "uniqueItems": true
+        },
+        "rescan": {
+            "anyOf": [
+                {
+                    "type": "null"
+                },
+                {
+                    "type": "object"
+                }
+            ]
+        }
+    },
+    "additionalProperties": false
+}

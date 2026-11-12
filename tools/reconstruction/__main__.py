@@ -47,9 +47,54 @@ def main(argv=None):
             command.add_argument("--request", required=True)
     command = commands.add_parser("verify-bundle")
     command.add_argument("--bundle", type=Path, required=True)
+    for name in ("create", "add-round", "run", "status", "review", "import", "final"):
+        command = commands.add_parser("project-" + name)
+        command.add_argument("--workspace", type=Path, required=True)
+        command.add_argument("--project", required=True)
+        if name == "create":
+            command.add_argument("--config", type=Path, required=True)
+            command.add_argument("--toolchain", type=Path, required=True)
+            command.add_argument("--policy", type=Path)
+        elif name == "add-round":
+            command.add_argument("--bundle", type=Path, action="append", default=[])
+            command.add_argument("--toolchain", type=Path)
+        elif name in ("run", "review", "final"):
+            command.add_argument("--round", required=name == "review")
+            if name == "review":
+                command.add_argument("--review", required=True)
+            elif name == "final":
+                command.add_argument("--final", default="final-001")
+                command.add_argument("--toolchain", type=Path)
+        elif name == "import":
+            command.add_argument("--response", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
-        if args.command == "prepare":
+        if args.command.startswith("project-"):
+            from .project import (
+                add_round,
+                create_project,
+                export_review,
+                finalize,
+                import_review,
+                project_status,
+                run_round,
+            )
+
+            if args.command == "project-create":
+                result = create_project(args.workspace, args.project, args.config, args.toolchain, args.policy)
+            elif args.command == "project-add-round":
+                result = add_round(args.workspace, args.project, args.bundle, args.toolchain)
+            elif args.command == "project-run":
+                result = run_round(args.workspace, args.project, args.round)
+            elif args.command == "project-status":
+                result = project_status(args.workspace, args.project)
+            elif args.command == "project-review":
+                result = export_review(args.workspace, args.project, args.round, args.review)
+            elif args.command == "project-import":
+                result = import_review(args.workspace, args.project, args.response)
+            else:
+                result = finalize(args.workspace, args.project, args.round, args.final, args.toolchain)
+        elif args.command == "prepare":
             result = prepare(args.workspace, args.bundle, args.job)
         elif args.command == "verify":
             result = verify(args.workspace, args.job)

@@ -544,10 +544,16 @@ class Runner:
         runner = self.cached_run(source["run_id"])
         require(runner.record["preparation_sha256"] == self.record["preparation_sha256"], "final inputs changed")
         require(runner.config == self.config, "final config differs from approved coarse run")
-        require(fingerprint(runner.toolchain) == fingerprint(self.toolchain), "final toolchain differs from coarse run")
-        shutil.copytree(
-            self.verified_stage(runner, stage), directory, dirs_exist_ok=True, ignore=shutil.ignore_patterns(".runtime")
+        require(
+            fingerprint(runner.toolchain)["colmap"] == fingerprint(self.toolchain)["colmap"],
+            "final COLMAP toolchain differs from coarse run",
         )
+        cached = self.verified_stage(runner, stage)
+        frozen_files = load_json((runner.root / "checkpoints" / (stage + ".json")).read_bytes(), "cache checkpoint")[
+            "files"
+        ]
+        shutil.copytree(cached, directory, dirs_exist_ok=True, ignore=shutil.ignore_patterns(".runtime"))
+        require(inventory(directory) == frozen_files, "frozen coarse stage changed during final copy")
         if stage == "map":
             model = read_model(directory / "models" / source["model"])
             require(identifier(model) == source["model_digest"], "approved coarse model changed")
@@ -644,6 +650,11 @@ class Runner:
                 cached = self.verified_stage(runner, "match") / "database.db"
                 database_check(cached, runner.names, runner.dimensions, matched=True)
                 shutil.copyfile(cached, directory / "database.db")
+                frozen_files = load_json((runner.root / "checkpoints/match.json").read_bytes(), "match checkpoint")[
+                    "files"
+                ]
+                expected_hash = next(entry["sha256"] for entry in frozen_files if entry["uri"] == "database.db")
+                require(file_hash(directory / "database.db") == expected_hash, "feature cache changed during copy")
                 cache = {
                     "status": "verified_seed",
                     "source_run": seed,
