@@ -19,6 +19,16 @@ from .win32_adapter import Win32Worker, WindowsAdapter, WorkerCancelled, release
 SOURCE_ROOT = Path(__file__).resolve().parents[2]
 
 
+class NativeTaskError(RuntimeError):
+    def __init__(self, message, diagnostic):
+        super().__init__(message)
+        self.diagnostic = diagnostic
+
+
+def native_status(status):
+    return next((name for name in ("pending", "running", "succeeded", "failed") if getattr(status, name)), "unknown")
+
+
 def native_install(workspace):
     workspace = check_path(workspace)
     candidates = (workspace / "local/runtime/capture-native", SOURCE_ROOT / "install", SOURCE_ROOT)
@@ -136,6 +146,7 @@ class NavigationAdapter(WindowsAdapter):
         self.current_job = None
         self.last_target = None
         self.stop_requested = False
+        self.sdk_log_configured = False
         os.environ.update(MAAFW_BINARY_PATH=str(self.install / "maafw"), PI_USER_DATA_DIR=str(run))
 
     def cancelled(self):
@@ -146,7 +157,112 @@ class NavigationAdapter(WindowsAdapter):
             self.stop_requested = True
             self.session.tasker.post_stop()
 
-    def wait_task(self, job, timeout, check_window=True):
+    def task_failure(self, job, operation, entry, reason, timed_out=False):
+        diagnostic = {"operation": operation, "task_entry": entry}
+        report = {**diagnostic, "error": reason, "timed_out": timed_out, "nodes": []}
+        if operation == "teleport":
+            diagnostic["teleport_entry"] = report["teleport_entry"] = entry
+        if timed_out:
+            try:
+                self.stop_task()
+            except Exception as error:
+                report["stop_error"] = str(error)
+        try:
+            report["job_id"] = job.job_id
+            report["job_status"] = native_status(job.status)
+            detail = self.session.tasker.get_task_detail(job.job_id)
+            if detail is None:
+                report["detail_error"] = "MaaFramework returned no task detail"
+            else:
+                report["task"] = {
+                    "task_id": detail.task_id,
+                    "entry": detail.entry,
+                    "status": native_status(detail.status),
+                    "node_id_list": detail.node_id_list,
+                }
+                # Keep the final reported nodes, without treating the last node as the failure cause.
+                for node_id in detail.node_id_list[-8:]:
+                    record = {"node_id": node_id}
+                    report["nodes"].append(record)
+                    try:
+                        node = self.session.tasker.get_node_detail(node_id)
+                        if node is None:
+                            record["detail_error"] = "MaaFramework returned no node detail"
+                            continue
+                        record.update(name=node.name, completed=node.completed)
+                        diagnostic["last_node"] = node.name
+                        for kind, item in (("recognition", node.recognition), ("action", node.action)):
+                            if item is None:
+                                record[kind] = None
+                                continue
+                            raw = json.dumps(item.raw_detail, ensure_ascii=False)
+                            record[kind] = {
+                                "name": item.name,
+                                "raw_detail_json": raw[:16384],
+                                "raw_detail_truncated": len(raw) > 16384,
+                            }
+                            if kind == "recognition":
+                                record[kind].update(reco_id=item.reco_id, algorithm=str(item.algorithm), hit=item.hit)
+                            else:
+                                record[kind].update(
+                                    action_id=item.action_id, action=str(item.action), success=item.success
+                                )
+                    except Exception as error:
+                        record["detail_error"] = f"{type(error).__name__}: {error}"
+        except Exception as error:
+            report["detail_error"] = f"{type(error).__name__}: {error}"
+        try:
+            report["logs"] = {
+                "worker_uri": (self.run / "logs/worker.log").relative_to(self.workspace).as_posix(),
+                "sdk_directory_uri": (self.run / "sdk").relative_to(self.workspace).as_posix(),
+                "sdk_log_configured": self.sdk_log_configured,
+                "agent_directory_uri": (self.run / "debug").relative_to(self.workspace).as_posix(),
+            }
+            directory = check_path(self.run / "diagnostics")
+            directory.mkdir(exist_ok=True)
+            path = directory / f"task-{job.job_id}-{uuid.uuid4().hex}.json"
+            report["image"] = {"source": "controller.cached_image", "capture_time": "unknown", "status": "unavailable"}
+            try:
+                image = self.controller.cached_image
+                if (
+                    image is None
+                    or str(image.dtype) != "uint8"
+                    or image.ndim != 3
+                    or image.shape[2] != 3
+                    or image.size == 0
+                ):
+                    raise RuntimeError("The controller has no usable cached navigation screenshot")
+                from PIL import Image
+
+                height, width = image.shape[:2]
+                target = check_path(path.with_suffix(".png"))
+                with target.open("xb") as stream:
+                    Image.fromarray(image[:, :, ::-1]).save(stream, format="PNG")
+                report["image"].update(
+                    status="saved",
+                    uri=target.relative_to(self.workspace).as_posix(),
+                    width=width,
+                    height=height,
+                    pixel_format="RGB8",
+                    source_format="BGR8",
+                    sha256=hashlib.sha256(target.read_bytes()).hexdigest(),
+                    scaled_navigation_image=True,
+                )
+            except Exception as error:
+                report["image"]["error"] = f"{type(error).__name__}: {error}"
+            report["last_node"] = diagnostic.get("last_node")
+            write_json(path, report)
+            diagnostic["diagnostic_uri"] = path.relative_to(self.workspace).as_posix()
+        except Exception as error:
+            diagnostic["diagnostic_error"] = f"{type(error).__name__}: {error}"
+        message = f"{reason}; task={entry}; last recorded node={diagnostic.get('last_node', 'unavailable')}"
+        if diagnostic.get("diagnostic_uri"):
+            message += f"; diagnostic={diagnostic['diagnostic_uri']}"
+        else:
+            message += f"; diagnostic unavailable: {diagnostic.get('diagnostic_error')}"
+        return NativeTaskError(message, diagnostic)
+
+    def wait_task(self, job, timeout, check_window=True, *, operation, entry):
         self.current_job = job
         deadline = time.monotonic() + timeout
         try:
@@ -163,10 +279,12 @@ class NavigationAdapter(WindowsAdapter):
                 if self.session.agent_exit_code is not None:
                     raise RuntimeError(f"Native navigation agent exited with {self.session.agent_exit_code}")
                 if time.monotonic() >= deadline:
-                    self.stop_task()
-                    raise TimeoutError("Native navigation operation exceeded its deadline")
+                    raise self.task_failure(
+                        job, operation, entry, "Native navigation operation exceeded its deadline", timed_out=True
+                    )
                 time.sleep(0.05)
-            require(job.succeeded, "Native navigation operation failed")
+            if not job.succeeded:
+                raise self.task_failure(job, operation, entry, "Native navigation operation failed")
         finally:
             if job.done:
                 self.current_job = None
@@ -183,6 +301,8 @@ class NavigationAdapter(WindowsAdapter):
         session_module = importlib.import_module("agent_session")
         sdk = runtime.load_maa_runtime()
         require(sdk is not None, "MaaFramework Python runtime is unavailable")
+        with suppress(Exception):
+            self.sdk_log_configured = sdk.Tasker.set_log_dir(check_path(self.run / "sdk"))
         adapter = self
 
         class GameConnector:
@@ -238,7 +358,7 @@ class NavigationAdapter(WindowsAdapter):
             }
         )
         job = self.session.tasker.post_task(node)
-        self.wait_task(job, 170, check_window=not self.query_only)
+        self.wait_task(job, 170, check_window=not self.query_only, operation="query", entry=node)
         detail = self.session.tasker.get_task_detail(job.job_id)
         record = detail.nodes[0] if detail and detail.nodes else None
         raw = (
@@ -253,11 +373,11 @@ class NavigationAdapter(WindowsAdapter):
 
     def run_node(self, name, body, timeout):
         self.session.resource.override_pipeline({name: body})
-        self.wait_task(self.session.tasker.post_task(name), timeout)
+        self.wait_task(self.session.tasker.post_task(name), timeout, operation="navigate_capture", entry=name)
 
     def teleport(self, entry):
         require(isinstance(entry, str) and entry.startswith("SceneEnterWorld"), "Invalid teleport entry")
-        self.wait_task(self.session.tasker.post_task(entry), 120)
+        self.wait_task(self.session.tasker.post_task(entry), 120, operation="teleport", entry=entry)
         self.last_target = None
         return {"ok": True, "teleport_entry": entry}
 
@@ -302,6 +422,7 @@ class NavigationAdapter(WindowsAdapter):
             "timeout_ms": 30000,
         }
         failure = None
+        failure_diagnostic = {}
         try:
             self.run_node(
                 "WorldCaptureView",
@@ -317,11 +438,16 @@ class NavigationAdapter(WindowsAdapter):
             )
         except (RuntimeError, ValueError, TimeoutError) as error:
             failure = str(error)
+            if isinstance(error, NativeTaskError):
+                failure_diagnostic = error.diagnostic
         require((output / "result.json").is_file(), failure or "Native photography produced no receipt")
         result = read_json(output / "result.json")
         result["receipt_uri"] = (output / "result.json").relative_to(self.run).as_posix()
         if failure and result.get("ok"):
             result.update(ok=False, error=failure)
+        elif failure and failure_diagnostic:
+            result["error"] = f"{result.get('error', 'Native photography failed')}; {failure}"
+        result.update(failure_diagnostic)
         if result.get("ok"):
             self.last_target = key
             result["image"]["uri"] = (output / result["image"]["uri"]).relative_to(self.run).as_posix()
@@ -402,7 +528,11 @@ def worker_main(run):
                 else:
                     raise ValueError("Unknown navigation worker operation")
             except Exception as error:
-                result = {"ok": False, "connected": False, "error": f"{type(error).__name__}: {error}"}
+                result = {"ok": False, "error": f"{type(error).__name__}: {error}"}
+                if request.get("operation") == "initialize":
+                    result["connected"] = False
+                if isinstance(error, NativeTaskError):
+                    result.update(error.diagnostic)
             write_json(run / ".worker" / f"response-{request['sequence']:04d}.json", result)
             if adapter.cancelled():
                 break

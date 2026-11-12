@@ -35,6 +35,8 @@ local\envs\capture-windows-py312\Scripts\python.exe -B -m tools.capture.server -
 
 任务因窗口失焦等原因暂停时，页面继续读取检查点和事件，显示已完成计数与原始暂停原因。若原因包含 `foreground=False`，表示检查时游戏未处于前台；保持窗口可见且未最小化，点击“恢复”后在五秒内切回游戏。其它原因按原始错误排查，窗口保护不会绕过。
 
+传送原生任务失败或达到原有时限时，错误会包含最后可用的节点名与诊断路径；`teleport` 事件的 `result.diagnostic_uri` 相对于工作区，指向 `local/capture/<task-id>/runtime/navigation-<id>/diagnostics/` 下的 JSON。诊断记录传送入口、实际 SDK 任务状态、节点 ID 列表、最后八个节点可用的识别和动作详情及日志路径，过长的原始详情会截断。最后记录的节点不代表已经确认的失败原因，单凭 `Native navigation operation failed` 不能认定地图识别失败。相邻 PNG 保存 SDK 最后可用的缩放导航缓存截图及其实际尺寸，截图时刻未知，不能当作原尺寸或失败瞬间的同帧摄影证据。请保留诊断 JSON、PNG 和其中列出的日志；详情读取、截图或写入失败会附加说明，原任务错误仍然保留。
+
 “导出冻结包”可选择本次页面读取到的会话，或导出最新会话。导出通过正式 CaptureBundle 校验后给出本地目录。未提交尝试与诊断文件保留在任务目录中。图像选择状态保持 `pending`，导航位置和朝向作为粗先验，真实相机位姿、俯仰、FOV、原生渲染时间及几何质量保持未知。离线处理入口见[输入准备](offline-preparation.md)。
 
 使用 CLI 可直接输入名称启动。完整参数以源码命令入口为准，任务 ID 应使用新的值。
