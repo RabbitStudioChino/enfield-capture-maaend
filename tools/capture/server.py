@@ -315,7 +315,7 @@ class CaptureHandler(BaseHTTPRequestHandler):
             )
             self.end_headers()
             self.wfile.write(data)
-        except ConnectionError, TimeoutError:
+        except (ConnectionError, TimeoutError):
             self.close_connection = True
 
     def send_json(self, record, status=200):

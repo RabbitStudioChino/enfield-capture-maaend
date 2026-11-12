@@ -57,6 +57,17 @@ extend-exclude = [
     "tests/MaaEndTestset",
 ]
 
+[tool.ruff.per-file-target-version]
+# Windows capture bundles Python 3.12 and these MapNavigator modules.
+"tools/capture/**/*.py" = "py312"
+"scripts/capture/**/*.py" = "py312"
+"tools/MapNavigator/__init__.py" = "py312"
+"tools/MapNavigator/model.py" = "py312"
+"tools/MapNavigator/runtime.py" = "py312"
+"tools/MapNavigator/agent_session.py" = "py312"
+"tools/MapNavigator/navmesh_backend.py" = "py312"
+"tools/MapNavigator/json_import.py" = "py312"
+
 [tool.ruff.lint]
 select = [
     "B",
