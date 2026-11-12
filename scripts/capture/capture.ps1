@@ -1,10 +1,12 @@
 [CmdletBinding(PositionalBinding=$false)]
 param(
     [Parameter(Position=0)][ValidateSet('doctor', 'probe', 'start', 'auto', 'serve', 'regions', 'list', 'status', 'pause', 'stop', 'resume', 'logs', 'export')][string]$Mode = 'serve',
-    [string]$Workspace = (Join-Path $PSScriptRoot '..\..'),
+    [string]$Workspace,
     [Parameter(ValueFromRemainingArguments=$true)][string[]]$CaptureArgs = @()
 )
 $ErrorActionPreference = 'Stop'
+$script:CaptureScriptPath = $PSCommandPath
+$script:WorkspaceWasProvided = $PSBoundParameters.ContainsKey('Workspace')
 $script:PythonVersion = '3.12.10'
 $script:PythonPackageUrl = 'https://api.nuget.org/v3-flatcontainer/python/3.12.10/python.3.12.10.nupkg'
 $script:PythonPackageHash = '0eb85c2dfccccf1b17352de4c397f69194035b7d37149eacc16f1147d93de3b8'
@@ -141,6 +143,14 @@ function Invoke-CaptureBootstrap {
     $exitCode = 1
     $script:Report = $null
     try {
+        if ([string]::IsNullOrWhiteSpace($script:CaptureScriptPath) -or -not [IO.Path]::IsPathRooted($script:CaptureScriptPath)) {
+            throw 'Capture script path is unavailable. Run capture.cmd or invoke capture.ps1 with -File.'
+        }
+        $scriptDirectory = [IO.Path]::GetDirectoryName($script:CaptureScriptPath)
+        if (-not $script:WorkspaceWasProvided) {
+            $Workspace = Join-Path $scriptDirectory '..\..'
+        }
+        if ([string]::IsNullOrWhiteSpace($Workspace)) { throw 'Workspace directory must not be empty.' }
         $script:WorkspaceRoot = [IO.Path]::GetFullPath($Workspace).TrimEnd([IO.Path]::DirectorySeparatorChar)
         Assert-WorkspacePath $script:WorkspaceRoot
         if (-not [IO.Directory]::Exists($script:WorkspaceRoot)) { throw 'Workspace directory does not exist.' }
@@ -195,7 +205,7 @@ function Invoke-CaptureBootstrap {
         $script:Report.python = $python
         Write-BootstrapReport
         Write-SetupLog 'Project CPython is ready. Starting the existing dependency setup and capture launcher.'
-        $bootstrap = Join-Path $PSScriptRoot 'bootstrap.py'
+        $bootstrap = Join-Path $scriptDirectory 'bootstrap.py'
         if ($needsSetup) {
             & $python -B $bootstrap --setup-only --workspace $script:WorkspaceRoot | Out-Host
             if ($LASTEXITCODE -ne 0) {
