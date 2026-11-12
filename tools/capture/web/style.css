@@ -160,6 +160,40 @@ button.active {
 .toolbar select {
   width: auto;
 }
+.toolbar #selection-name {
+  width: 180px;
+}
+.saved-panel {
+  border: 1px solid #344248;
+  border-radius: 7px;
+  padding: 12px;
+}
+.saved-panel h2 {
+  font-size: 14px;
+  margin: 0 0 8px;
+}
+#saved-selections {
+  display: grid;
+  gap: 6px;
+  max-height: 170px;
+  overflow: auto;
+}
+.saved-selection {
+  display: flex;
+  gap: 8px;
+}
+.saved-selection button:first-child {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+#selections-status {
+  margin: 8px 0 0;
+}
+#selections-status.error {
+  color: #efad83;
+}
 .toolbar label {
   display: flex;
   align-items: center;

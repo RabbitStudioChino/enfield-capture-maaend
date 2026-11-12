@@ -6,6 +6,9 @@ const $ = (id) => document.getElementById(id);
 const canvas = $("map-canvas");
 const context = canvas.getContext("2d");
 const camera = new Camera();
+const parameterInputs = {radius: "radius", spacing: "spacing", views: "views", max_points: "max-points"};
+const exclusiveControls =
+  "#capture-form input, #capture-form select, #capture-form button, .toolbar input, .toolbar select, .toolbar button, #saved-selections button, #export, #load-task";
 const state = {
   catalog: null,
   region: null,
@@ -16,6 +19,9 @@ const state = {
   drawing: false,
   plan: null,
   zones: [],
+  zonesLoaded: false,
+  selections: [],
+  selectionsLoading: true,
   task: "",
   checkpoint: null,
   cursor: "",
@@ -31,6 +37,88 @@ let polling = false;
 function message(text, error = false) {
   $("message").textContent = text;
   $("message").classList.toggle("error", error);
+}
+
+function selectionMessage(text, error = false) {
+  $("selections-status").textContent = text;
+  $("selections-status").classList.toggle("error", error);
+}
+
+function renderSelections() {
+  $("saved-selections").replaceChildren();
+  for (const selection of state.selections) {
+    const row = document.createElement("div");
+    row.className = "saved-selection";
+    const load = document.createElement("button");
+    load.type = "button";
+    load.textContent = `${selection.name} · ${selection.polygon.length} 个顶点 · ${selection.created_utc.slice(0, 10)}`;
+    load.title = `底图 ${selection.map} · 锚点 ${selection.region} · 点击加载范围与采样参数`;
+    load.disabled = busy || !state.catalog;
+    load.addEventListener(
+      "click",
+      () =>
+        void operation(
+          async () => {
+            if (!state.catalog) throw new Error("区域目录尚未读取完成，请稍后加载。");
+            const {selection: saved} = await api("/api/selections/load", {id: selection.id});
+            const region = state.catalog.regions.find((item) => item.id === saved.region && item.map === saved.map);
+            if (!region) throw new Error("选区锚点或底图已失效，请重新打开页面读取当前目录。");
+            await chooseRegion(region, false);
+            state.polygon = saved.polygon;
+            for (const [
+              key,
+              id,
+            ] of Object.entries(parameterInputs))
+              $(id).value = saved[key];
+            $("floor").value = saved.floor_y ?? "";
+            updateTiers(saved.tier || "");
+            $("selection-name").value = saved.name;
+            invalidate();
+            fit();
+            const notice = tierNotice();
+            selectionMessage(`已加载“${saved.name}”，可预览或开始采集。${notice}`, state.zonesLoaded && !!notice);
+          },
+          true,
+          selectionMessage,
+        ),
+    );
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.textContent = "删除";
+    remove.setAttribute("aria-label", `删除选区 ${selection.name}`);
+    remove.disabled = busy || !state.catalog;
+    remove.addEventListener(
+      "click",
+      () =>
+        void operation(
+          async () => {
+            const result = await api("/api/selections/delete", {id: selection.id});
+            state.selections = result.selections;
+            renderSelections();
+            selectionMessage(`已删除“${selection.name}”。`);
+          },
+          true,
+          selectionMessage,
+        ),
+    );
+    row.append(load, remove);
+    $("saved-selections").append(row);
+  }
+}
+
+async function loadSelections() {
+  try {
+    const result = await api("/api/selections");
+    state.selections = result.selections;
+    renderSelections();
+    selectionMessage(
+      state.selections.length ? "点击选区名称即可加载，不会启动任务。" : "尚未保存选区。完成圈选后输入名称并保存。",
+    );
+  } catch (error) {
+    selectionMessage(error.message, true);
+  } finally {
+    state.selectionsLoading = false;
+  }
 }
 
 async function api(path, body) {
@@ -83,18 +171,24 @@ function fit() {
   render();
 }
 
-function updateTiers() {
-  const selected = $("tier").value;
+function tierNotice() {
+  if (!$("tier").value) return "";
+  if (!state.zonesLoaded) return "导航层级尚未核对，已保留所选层级。";
+  return state.zones.some(
+    (zone) => zone.is_tier && zone.geometry_zone_id === state.map?.zone_id && zone.name === $("tier").value,
+  )
+    ? ""
+    : "所选层级已不在当前底图的导航目录中，请重新选择层级后再预览或开始。";
+}
+
+function updateTiers(selected = $("tier").value) {
   $("tier").replaceChildren(new Option("自动选择可达层", ""));
   for (const zone of state.zones.filter((z) => z.is_tier && z.geometry_zone_id === state.map?.zone_id)) {
     $("tier").add(new Option(zone.name, zone.name));
   }
-  if (
-    [
-      ...$("tier").options,
-    ].some((option) => option.value === selected)
-  )
-    $("tier").value = selected;
+  if (selected && ![...$("tier").options].some((option) => option.value === selected))
+    $("tier").add(new Option(`${selected}（${state.zonesLoaded ? "当前底图不可用" : "待核对"}）`, selected));
+  $("tier").value = selected;
 }
 
 async function loadMesh(generation) {
@@ -110,7 +204,7 @@ async function loadMesh(generation) {
   }
 }
 
-async function setMap(mapId) {
+async function setMap(mapId, fetchMesh = true) {
   const frame = state.catalog.maps.find((item) => item.id === mapId);
   if (!frame) return;
   if (state.map?.id === mapId) {
@@ -124,7 +218,7 @@ async function setMap(mapId) {
   const generation = ++state.mapGeneration;
   $("map").value = mapId;
   $("map-info").textContent = `${frame.name} · ${frame.zone} · ${frame.size.join(" × ")}`;
-  updateTiers();
+  updateTiers("");
   fit();
   const image = new Image();
   image.onload = () => {
@@ -137,10 +231,10 @@ async function setMap(mapId) {
     if (generation === state.mapGeneration) message("底图加载失败，请检查正式地图资源是否齐全。", true);
   };
   image.src = `/api/map?map=${encodeURIComponent(mapId)}`;
-  if ($("show-mesh").checked) void loadMesh(generation);
+  if (fetchMesh && $("show-mesh").checked) void loadMesh(generation);
 }
 
-async function chooseRegion(region) {
+async function chooseRegion(region, fetchMesh = true) {
   state.region = region;
   state.polygon = [];
   state.drawing = false;
@@ -151,7 +245,7 @@ async function chooseRegion(region) {
   $("region-info").textContent =
     `${region.name} · ${region.level_name} · 锚点 ${region.id}。默认采集锚点周边，可调半径或圈选。`;
   invalidate();
-  await setMap(region.map);
+  await setMap(region.map, fetchMesh);
 }
 
 function search() {
@@ -186,37 +280,32 @@ function request() {
   if (state.drawing) throw new Error("请先点击完成圈选，或使用周边半径。");
   const body = {
     region: state.region?.id || $("region").value.trim(),
-    radius: Number($("radius").value),
-    spacing: Number($("spacing").value),
-    views: Number($("views").value),
-    max_points: Number($("max-points").value),
   };
+  for (const [
+    key,
+    id,
+  ] of Object.entries(parameterInputs))
+    body[key] = Number($(id).value);
   if (state.polygon.length) body.polygon = state.polygon;
   if ($("tier").value) body.tier = $("tier").value;
   if ($("floor").value !== "") body.floor_y = Number($("floor").value);
   return body;
 }
 
-async function operation(callback, exclusive = true) {
+async function operation(callback, exclusive = true, feedback = message) {
   if (busy && exclusive) return;
   if (exclusive) {
     busy = true;
-    for (const element of document.querySelectorAll(
-      "#capture-form input, #capture-form select, #capture-form button, #export, #load-task",
-    ))
-      element.disabled = true;
+    for (const element of document.querySelectorAll(exclusiveControls)) element.disabled = true;
   }
   try {
     await callback();
   } catch (error) {
-    message(error.message, true);
+    feedback(error.message, true);
   } finally {
     if (exclusive) {
       busy = false;
-      for (const element of document.querySelectorAll(
-        "#capture-form input, #capture-form select, #capture-form button, #export, #load-task",
-      ))
-        element.disabled = false;
+      for (const element of document.querySelectorAll(exclusiveControls)) element.disabled = false;
     }
   }
 }
@@ -437,6 +526,27 @@ $("clear").addEventListener("click", () => {
   canvas.classList.remove("drawing");
   invalidate();
 });
+$("save-selection").addEventListener(
+  "click",
+  () =>
+    void operation(
+      async () => {
+        if (state.selectionsLoading) throw new Error("本地选区列表正在读取，请稍后保存。");
+        if (!state.region || state.region.map !== state.map?.id) throw new Error("请先选择真实区域锚点。");
+        const body = request();
+        if (!body.polygon || body.polygon.length < 3) throw new Error("请先完成至少三个顶点的圈选，再保存选区。");
+        const name = $("selection-name").value.trim();
+        if (!name) throw new Error("请输入选区名称。");
+        selectionMessage("正在保存到本地选区列表…");
+        const result = await api("/api/selections", {...body, name, map: state.map.id});
+        state.selections = result.selections;
+        renderSelections();
+        selectionMessage(`已保存“${result.selection.name}”。下次打开本工作区时会自动读取列表。`);
+      },
+      true,
+      selectionMessage,
+    ),
+);
 $("fit").addEventListener("click", fit);
 $("region").addEventListener("input", search);
 $("map").addEventListener("change", () => {
@@ -518,6 +628,7 @@ $("export").addEventListener(
 new ResizeObserver(render).observe(canvas);
 
 async function initialize() {
+  void loadSelections();
   const config = await api("/api/config");
   token = config.token;
   $("workspace").textContent = `工作区 ${config.workspace} · 所有采集数据、计划与日志保存在 local/`;
@@ -529,11 +640,17 @@ async function initialize() {
     await setMap(state.catalog.maps[0].id);
     search();
   }
+  renderSelections();
   message("选择区域后可以直接开始。自动任务将控制游戏移动和镜头，开始或恢复后请在五秒内切回游戏并保持前台。");
   try {
     const result = await api("/api/zones");
     state.zones = result.zones;
+    state.zonesLoaded = true;
     updateTiers();
+    if ($("tier").value) {
+      const notice = tierNotice();
+      selectionMessage(notice || "所选导航层级已核对，可以预览或开始采集。", !!notice);
+    }
   } catch (error) {
     message(`地图已加载，导航资源尚未就绪 ${error.message}`, true);
   }

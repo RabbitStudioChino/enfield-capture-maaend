@@ -11,14 +11,16 @@ import sys
 import threading
 import uuid
 import webbrowser
+from datetime import UTC, datetime
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-from .planner import build_plan
+from .planner import build_plan, selection_parameters, validate_polygon
+from .probe import utc_now
 from .regions import SOURCE_ROOT, region_catalog, resource_hashes
-from .task import check_path, read_json, task_path, valid_id, write_json
+from .task import check_path, encoded, exclusive, read_json, task_path, valid_id, write_json
 from .validate import load_json, require
 
 WEB_ROOT = Path(__file__).with_name("web")
@@ -28,6 +30,49 @@ STATIC_FILES.update(
     {f"/shared/{name}": SHARED_ROOT / name for name in ("camera.js", "map_view.js", "navmesh_3d_data.js")}
 )
 MAX_BODY = 128 * 1024
+MAX_SELECTION_BYTES = 1024 * 1024
+MAX_SELECTIONS = 100
+SELECTION_SCHEMA = "capture.saved-selections/1.0"
+SELECTION_FIELDS = {
+    "id",
+    "name",
+    "created_utc",
+    "region",
+    "map",
+    "polygon",
+    "radius",
+    "spacing",
+    "views",
+    "max_points",
+    "tier",
+    "floor_y",
+}
+
+
+def selection_text(value, label, maximum=120):
+    require(
+        isinstance(value, str)
+        and 0 < len(value) <= maximum
+        and value == value.strip()
+        and all(ord(character) >= 32 for character in value),
+        f"{label}必须为 1 至 {maximum} 个可显示字符",
+    )
+    return value
+
+
+def current_selection(request):
+    parameters = selection_parameters(request)
+    catalog = region_catalog()
+    region = next((item for item in catalog["regions"] if item["id"] == request.get("region")), None)
+    require(region is not None, "选区的区域锚点已失效，请重新选择真实区域")
+    require(region["map"] == request.get("map"), "选区底图与区域锚点不一致，请重新选择")
+    frame = next(item for item in catalog["maps"] if item["id"] == region["map"])
+    return {
+        "region": region["id"],
+        "map": frame["id"],
+        "polygon": validate_polygon(request.get("polygon"), frame["size"]),
+        **parameters,
+    }
 
 
 class CaptureApplication:
@@ -44,6 +89,71 @@ class CaptureApplication:
         self.children = {}
         self.lock = threading.Lock()
         self.mesh_lock = threading.Lock()
+
+    def selections(self):
+        path = check_path(self.directory / "selections.json")
+        if not path.exists():
+            return []
+        try:
+            require(path.is_file(), "列表路径不是普通文件")
+            with path.open("rb") as stream:
+                data = stream.read(MAX_SELECTION_BYTES + 1)
+            require(len(data) <= MAX_SELECTION_BYTES, "列表文件超出 1 MiB")
+            record = load_json(data, str(path))
+            require(
+                isinstance(record, dict)
+                and set(record) == {"schema_version", "selections"}
+                and record["schema_version"] == SELECTION_SCHEMA,
+                "不支持的选区列表格式",
+            )
+            items = record["selections"]
+            require(isinstance(items, list) and len(items) <= MAX_SELECTIONS, "选区列表最多 100 条")
+            seen = set()
+            for item in items:
+                require(isinstance(item, dict) and set(item) == SELECTION_FIELDS, "选区记录字段不完整或未知")
+                identity = selection_text(item["id"], "选区 ID", 32)
+                require(uuid.UUID(identity).hex == identity and identity not in seen, "选区 ID 无效或重复")
+                seen.add(identity)
+                selection_text(item["name"], "选区名称", 80)
+                timestamp = selection_text(item["created_utc"], "保存时间", 40)
+                require(datetime.fromisoformat(timestamp).tzinfo == UTC, "保存时间必须为 UTC")
+                selection_text(item["region"], "区域锚点")
+                selection_text(item["map"], "底图")
+                selection_parameters(item)
+                validate_polygon(item["polygon"])
+            return items
+        except (OSError, ValueError, TypeError) as error:
+            raise ValueError(f"本地选区列表读取失败，原文件保留，请检查 {path}：{error}") from error
+
+    def save_selection(self, request):
+        name = selection_text(request.get("name"), "选区名称", 80)
+        selection = current_selection(request)
+        with exclusive(self.directory / ".selections.lock"):
+            items = self.selections()
+            require(len(items) < MAX_SELECTIONS, "已保存 100 个选区，请先删除不需要的选区")
+            item = {"id": uuid.uuid4().hex, "name": name, "created_utc": utc_now(), **selection}
+            items.insert(0, item)
+            record = {"schema_version": SELECTION_SCHEMA, "selections": items}
+            require(len(encoded(record)) <= MAX_SELECTION_BYTES, "选区列表将超出 1 MiB，请先删除不需要的选区")
+            write_json(check_path(self.directory / "selections.json"), record, replace=True)
+        return {"selection": item, "selections": items}
+
+    def load_selection(self, identity):
+        item = next((item for item in self.selections() if item["id"] == identity), None)
+        require(item is not None, "该选区已不存在，请重新打开页面读取列表")
+        return {**item, **current_selection(item)}
+
+    def delete_selection(self, identity):
+        with exclusive(self.directory / ".selections.lock"):
+            items = self.selections()
+            remaining = [item for item in items if item["id"] != identity]
+            require(len(remaining) != len(items), "该选区已不存在，请重新打开页面读取列表")
+            write_json(
+                check_path(self.directory / "selections.json"),
+                {"schema_version": SELECTION_SCHEMA, "selections": remaining},
+                replace=True,
+            )
+        return {"selections": remaining}
 
     def cli_arguments(self, command, arguments):
         return [sys.executable, "-B", "-m", "tools.capture", command, "--workspace", str(self.workspace), *arguments]
@@ -205,7 +315,7 @@ class CaptureHandler(BaseHTTPRequestHandler):
             )
             self.end_headers()
             self.wfile.write(data)
-        except (ConnectionError, TimeoutError):
+        except ConnectionError, TimeoutError:
             self.close_connection = True
 
     def send_json(self, record, status=200):
@@ -243,6 +353,8 @@ class CaptureHandler(BaseHTTPRequestHandler):
                 )
             elif route.path == "/api/catalog":
                 self.send_json(region_catalog())
+            elif route.path == "/api/selections":
+                self.send_json({"selections": app.selections()})
             elif route.path == "/api/zones":
                 from .navigation_worker import query_navigation
 
@@ -285,6 +397,12 @@ class CaptureHandler(BaseHTTPRequestHandler):
             route = urlsplit(self.path).path
             if route == "/api/preview":
                 self.send_json(build_plan(app.workspace, body))
+            elif route == "/api/selections":
+                self.send_json(app.save_selection(body), 201)
+            elif route == "/api/selections/load":
+                self.send_json({"selection": app.load_selection(selection_text(body.get("id"), "选区 ID", 32))})
+            elif route == "/api/selections/delete":
+                self.send_json(app.delete_selection(selection_text(body.get("id"), "选区 ID", 32)))
             elif route == "/api/start":
                 self.send_json(app.start(body), 202)
             elif route == "/api/control":

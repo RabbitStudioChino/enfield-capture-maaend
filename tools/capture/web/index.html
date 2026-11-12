@@ -75,8 +75,20 @@
           <select id="map" aria-label="底图"></select
           ><button id="fit" type="button">查看区域</button><button id="draw" type="button">圈选范围</button
           ><button id="finish" type="button">完成圈选</button><button id="clear" type="button">使用周边半径</button
+          ><input
+            id="selection-name"
+            aria-label="选区名称"
+            placeholder="输入选区名称"
+            maxlength="80"
+            autocomplete="off" />
+          <button id="save-selection" type="button">保存选区</button
           ><label><input id="show-mesh" type="checkbox" />显示网格</label>
         </div>
+        <section class="saved-panel" aria-labelledby="saved-title">
+          <h2 id="saved-title">已保存选区</h2>
+          <div id="saved-selections"></div>
+          <p id="selections-status" class="hint" role="status">正在读取本地选区列表…</p>
+        </section>
         <div class="canvas-wrap">
           <canvas
             id="map-canvas"

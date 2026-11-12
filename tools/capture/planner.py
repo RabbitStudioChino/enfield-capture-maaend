@@ -13,19 +13,55 @@ def number(value, name, lower, upper):
     return value
 
 
-def build_plan(workspace, request):
-    from .navigation_worker import query_navigation, verify_resource_mirror
-
-    require(isinstance(request, dict), "规划请求必须为 JSON 对象")
-    catalog = region_catalog()
-    region = resolve_region(request.get("region"), catalog)
-    frame = next(item for item in catalog["maps"] if item["id"] == region["map"])
+def selection_parameters(request):
+    require(isinstance(request, dict), "选区请求必须为 JSON 对象")
     radius = number(request.get("radius", 60), "半径", 10, 600)
     spacing = number(request.get("spacing", 20), "采样间距", 5, 200)
     views = request.get("views", 8)
     require(type(views) is int and 1 <= views <= 12, "每点视角数必须为 1 至 12 的整数")
     max_points = request.get("max_points", 160)
     require(type(max_points) is int and 1 <= max_points <= 512, "采样点预算必须为 1 至 512 的整数")
+    tier = request.get("tier")
+    require(
+        tier is None
+        or (
+            isinstance(tier, str) and 0 < len(tier) <= 120 and tier == tier.strip() and all(ord(c) >= 32 for c in tier)
+        ),
+        "层级名称必须为 1 至 120 个可显示字符",
+    )
+    floor_y = request.get("floor_y")
+    if floor_y is not None:
+        number(floor_y, "层高", -100000, 100000)
+    return {
+        "radius": radius,
+        "spacing": spacing,
+        "views": views,
+        "max_points": max_points,
+        "tier": tier,
+        "floor_y": floor_y,
+    }
+
+
+def validate_polygon(polygon, size=None):
+    require(isinstance(polygon, list) and 3 <= len(polygon) <= 64, "选区需要 3 至 64 个顶点")
+    for point in polygon:
+        require(isinstance(point, list) and len(point) == 2, "选区顶点需要两个底图坐标")
+        number(point[0], "选区 X", 0, size[0] if size else 100000)
+        number(point[1], "选区 Y", 0, size[1] if size else 100000)
+    require(len({tuple(point) for point in polygon}) >= 3, "选区至少需要三个不同顶点")
+    area = sum(a[0] * b[1] - b[0] * a[1] for a, b in zip(polygon, [*polygon[1:], polygon[0]], strict=True))
+    require(abs(area) > 0.000001, "选区面积为零或过小，请重新圈选")
+    return polygon
+
+
+def build_plan(workspace, request):
+    from .navigation_worker import query_navigation, verify_resource_mirror
+
+    parameters = selection_parameters(request)
+    catalog = region_catalog()
+    region = resolve_region(request.get("region"), catalog)
+    frame = next(item for item in catalog["maps"] if item["id"] == region["map"])
+    radius, spacing, views, max_points = (parameters[key] for key in ("radius", "spacing", "views", "max_points"))
     center = region["anchor_position"]
     polygon = request.get("polygon")
     if polygon is None:
@@ -36,13 +72,9 @@ def build_plan(workspace, request):
             ]
             for index in range(48)
         ]
-    require(isinstance(polygon, list) and 3 <= len(polygon) <= 64, "选区需要 3 至 64 个顶点")
-    for point in polygon:
-        require(isinstance(point, list) and len(point) == 2, "选区顶点需要两个底图坐标")
-        number(point[0], "选区 X", 0, frame["size"][0])
-        number(point[1], "选区 Y", 0, frame["size"][1])
-    floor_y = request.get("floor_y")
-    tier = request.get("tier")
+    validate_polygon(polygon, frame["size"])
+    floor_y = parameters["floor_y"]
+    tier = parameters["tier"]
     if tier:
         require(isinstance(tier, str), "层级名称必须为字符串")
         zones = query_navigation(workspace, "zones")
