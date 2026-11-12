@@ -79,11 +79,27 @@ def freeze_all(root):
     return exports
 
 
-def start_auto(workspace, request_or_plan, task_id=None, start_delay=5):
+def start_auto(workspace, request_or_plan, task_id=None, start_delay=5, launch_cancel=None):
     workspace = task.check_path(workspace)
     task_id = task_id or "auto-" + datetime.now(UTC).strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:8]
+    task.valid_id(task_id)
+    if launch_cancel is not None:
+        launch_cancel = task.check_path(launch_cancel)
+        prefix = task_id + "-"
+        identity = launch_cancel.name.removeprefix(prefix).removesuffix(".cancel.json")
+        require(
+            launch_cancel.parent == workspace / "local/capture-ui/launches"
+            and launch_cancel.name == prefix + identity + ".cancel.json"
+            and len(identity) == 32
+            and all(character in "0123456789abcdef" for character in identity),
+            "Launch cancellation path does not belong to this task",
+        )
+        if launch_cancel.exists():
+            print("Automatic capture cancelled before task initialization.", flush=True)
+            return 130
     parent = task.task_path(workspace, task_id, create=True).parent
     with task.exclusive(parent / ".controller.lock"):
+        print("Checking automatic capture plan and resource fingerprints...", flush=True)
         if request_or_plan.get("schema_version") == "capture.auto-plan/1.0":
             plan = verify_plan(request_or_plan, workspace)
         else:
@@ -101,6 +117,7 @@ def start_auto(workspace, request_or_plan, task_id=None, start_delay=5):
         sdk_version = version("maafw").removeprefix("v")
         require(sdk_version == "5.14.3", "Automatic capture requires locked maafw 5.14.3")
         region = plan["region"]
+        print("Recording native runtime resource fingerprints...", flush=True)
         metadata = {
             "execution_mode": "auto",
             "auto_plan": plan,
@@ -119,16 +136,33 @@ def start_auto(workspace, request_or_plan, task_id=None, start_delay=5):
                 "Camera pose, pitch, FOV, native render timestamp and geometric quality remain unknown.",
             },
         }
+        if launch_cancel is not None and task.check_path(launch_cancel).exists():
+            print("Automatic capture cancelled before task initialization.", flush=True)
+            return 130
         root = task.create_task(workspace, task_id, len(plan["waypoints"]), 0.25, region["name"], metadata)
+        print(f"Task checkpoint created: {root / 'checkpoint.json'}", flush=True)
         with task.exclusive(root / ".task.lock"):
-            return AutoTaskRunner(root, task.load_task(root), start_delay).run()
+            return AutoTaskRunner(root, task.load_task(root), start_delay, launch_cancel).run()
 
 
 class AutoTaskRunner(task.TaskRunner):
-    def __init__(self, root, metadata, start_delay):
+    def __init__(self, root, metadata, start_delay, launch_cancel=None):
         self.workspace = root.parents[2]
         self.native_clock = None
+        self.launch_cancel = launch_cancel
         super().__init__(root, metadata, NavigationWorker, start_delay)
+
+    def pending(self):
+        commands = super().pending()
+        if self.launch_cancel is not None and task.check_path(self.launch_cancel).exists():
+            # Cancellation must survive the handoff from resource preparation to the controller.
+            command = {
+                "command_id": "launch-stop-" + self.launch_cancel.name.removesuffix(".cancel.json")[-32:],
+                "generation": self.checkpoint["generation"],
+                "action": "stop",
+            }
+            return [command, *commands]
+        return commands
 
     def verify_resources(self):
         install = task.check_path(self.workspace / self.task["runtime_root"])

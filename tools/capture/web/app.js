@@ -311,6 +311,7 @@ async function operation(callback, exclusive = true, feedback = message) {
       for (const element of document.querySelectorAll(exclusiveControls)) element.disabled = false;
       updateRescanStart();
     }
+    updateTaskControls();
   }
 }
 
@@ -485,6 +486,36 @@ function selectTask(taskId) {
   $("task").value = taskId;
   $("session").replaceChildren(new Option("最新会话", ""));
   $("events").textContent = "正在读取任务事件…";
+  $("task-state").textContent = "正在读取任务状态…";
+  $("progress-bar").style.width = "0%";
+  $("identity").textContent = "";
+  updateTaskControls();
+}
+
+function updateTaskControls() {
+  const checkpoint = state.checkpoint;
+  const ready = checkpoint?.checkpoint_ready && !checkpoint.launch_pending;
+  for (const button of document.querySelectorAll("[data-action]")) {
+    button.disabled =
+      !state.task || !checkpoint || (button.dataset.action !== "stop" && !ready) || checkpoint.status === "stopping";
+  }
+  $("export").disabled = busy || !ready || !checkpoint.session_id;
+  $("session").disabled = !ready || !checkpoint.session_id;
+}
+
+function launchDiagnostics(checkpoint) {
+  return [
+    checkpoint.launch_log ? `启动日志 ${checkpoint.launch_log}` : "",
+    checkpoint.launch_created_utc ? `启动时间 ${checkpoint.launch_created_utc}` : "",
+    checkpoint.launcher_exit_code !== undefined && checkpoint.launcher_exit_code !== null
+      ? `启动进程退出码 ${checkpoint.launcher_exit_code}`
+      : "",
+    checkpoint.launch_log_error ? `启动日志读取失败 ${checkpoint.launch_log_error}` : "",
+    checkpoint.launch_error ? `启动失败 ${checkpoint.launch_error}` : "",
+    checkpoint.launch_log_tail || "",
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 async function refresh() {
@@ -495,14 +526,48 @@ async function refresh() {
     const checkpoint = await api(`/api/status?task=${encodeURIComponent(taskId)}`);
     if (state.task !== taskId) return;
     state.checkpoint = checkpoint;
+    updateTaskControls();
+    const initializing = !checkpoint.checkpoint_ready || checkpoint.launch_pending;
+    const launchFailed =
+      checkpoint.status === "created" &&
+      !checkpoint.active &&
+      checkpoint.launcher_exit_code !== undefined &&
+      checkpoint.launcher_exit_code !== null;
+    const labels = {
+      starting: "正在初始化：核对资源并创建检查点",
+      created: launchFailed
+        ? "初始化进程已退出，检查点仍停留在创建阶段，请查看启动日志"
+        : "任务已创建，正在准备采集进程",
+      stopping: "正在请求停止，尚未确认退出",
+      launch_unknown: "原启动进程状态未知",
+      failed: "任务失败",
+      stopped: "已停止",
+      paused: "已暂停",
+    };
+    const progress = initializing
+      ? `计划 ${checkpoint.count} 个视角，尚无采集进度`
+      : `${checkpoint.next_index}/${checkpoint.count}`;
+    const process =
+      checkpoint.status === "launch_unknown" || (checkpoint.launch_pending && !checkpoint.launcher_tracked)
+        ? "原启动进程状态未知，请核对日志"
+        : checkpoint.launch_pending
+          ? "启动进程准备中"
+          : checkpoint.active
+            ? "进程运行中"
+            : "进程未运行";
     $("task-state").textContent =
-      `${checkpoint.status === "paused" ? "已暂停" : checkpoint.status} · ${checkpoint.next_index}/${checkpoint.count} · ${checkpoint.active ? "进程运行中" : "进程已退出"}${checkpoint.error ? ` · 原因：${checkpoint.error}` : ""}${checkpoint.status === "paused" ? "。请排除上述原因，保持游戏窗口可见且未最小化；点击“恢复”后，请在五秒内切回游戏并保持前台。" : ""}`;
+      `${labels[checkpoint.status] || checkpoint.status} · ${progress} · ${process}${checkpoint.error ? ` · 原因：${checkpoint.error}` : ""}${checkpoint.status === "paused" ? "。请排除上述原因，保持游戏窗口可见且未最小化；点击“恢复”后，请在五秒内切回游戏并保持前台。" : ""}`;
+    $("task-state").classList.toggle("error", !!checkpoint.error || launchFailed);
     $("progress-bar").style.width = `${checkpoint.count ? (100 * checkpoint.next_index) / checkpoint.count : 0}%`;
     $("identity").textContent =
       `会话 ${checkpoint.session_id || "待创建"}\ngeneration ${checkpoint.generation || "待创建"}`;
     if (checkpoint.session_id && !state.sessions.has(checkpoint.session_id)) {
       state.sessions.add(checkpoint.session_id);
       $("session").add(new Option(checkpoint.session_id, checkpoint.session_id));
+    }
+    if (!checkpoint.checkpoint_ready) {
+      $("events").textContent = `尚未创建任务检查点，事件将在初始化后自动读取。\n\n${launchDiagnostics(checkpoint)}`;
+      return;
     }
     const result = await api(
       `/api/events?task=${encodeURIComponent(taskId)}&after=${encodeURIComponent(state.cursor)}`,
@@ -511,10 +576,18 @@ async function refresh() {
     state.cursor = result.cursor;
     state.events.push(...result.events);
     state.events = state.events.slice(-80);
-    $("events").textContent = state.events.map((item) => JSON.stringify(item)).join("\n") || "等待首个事件";
+    $("events").textContent = [
+      state.events.map((item) => JSON.stringify(item)).join("\n") || "等待首个事件",
+      launchDiagnostics(checkpoint),
+    ].join("\n\n");
     $("events").scrollTop = $("events").scrollHeight;
   } catch (error) {
-    if (state.task === taskId) message(`任务状态暂不可读 ${error.message}。保留本地启动日志。`, true);
+    if (state.task === taskId) {
+      state.checkpoint = null;
+      updateTaskControls();
+      $("task-state").textContent = "任务状态暂不可读，请查看错误与本地启动日志。";
+      message(`任务状态暂不可读 ${error.message}。保留本地启动日志。`, true);
+    }
   } finally {
     polling = false;
   }
@@ -738,8 +811,8 @@ $("capture-form").addEventListener("submit", (event) => {
   void operation(async () => {
     message("正在规划并启动任务…");
     const result = await api("/api/start", request());
-    await showPlan(result.plan);
     selectTask(result.task_id);
+    await showPlan(result.plan);
     message(`${result.message}\n启动日志 ${result.launch_log}`);
     await refresh();
   });
@@ -759,6 +832,8 @@ for (const button of document.querySelectorAll("[data-action]"))
       void operation(async () => {
         if (!state.task) throw new Error("请先启动或载入任务。");
         const action = button.dataset.action;
+        if (action !== "stop" && (!state.checkpoint?.checkpoint_ready || state.checkpoint.launch_pending))
+          throw new Error("任务仍在初始化，暂不能暂停或恢复。");
         const result = await api("/api/control", {
           task: state.task,
           action,
@@ -766,7 +841,9 @@ for (const button of document.querySelectorAll("[data-action]"))
           generation: state.checkpoint?.generation,
         });
         message(
-          `${action} ${result.result || "已提交"}${action === "resume" ? "，请在五秒内切回游戏并保持前台。" : ""}`,
+          result.result === "cancellation_requested"
+            ? "已记录停止请求，正在等待启动进程确认取消；请查看任务状态和启动日志。"
+            : `${action} ${result.result || "已提交"}${action === "resume" ? "，请在五秒内切回游戏并保持前台。" : ""}`,
         );
         await refresh();
       }, false),
@@ -776,6 +853,8 @@ $("export").addEventListener(
   () =>
     void operation(async () => {
       if (!state.task) throw new Error("请先载入任务。");
+      if (!state.checkpoint?.checkpoint_ready || !state.checkpoint.session_id)
+        throw new Error("任务仍在初始化，暂不能导出。");
       const result = await api("/api/export", {task: state.task, session: $("session").value || null});
       $("export-result").textContent = result.bundle;
       message("冻结包已导出并通过格式与文件完整性校验，图像几何质量待审。");
@@ -865,6 +944,7 @@ $("rescan-start").addEventListener(
     }),
 );
 new ResizeObserver(render).observe(canvas);
+updateTaskControls();
 
 async function initialize() {
   void loadSelections();

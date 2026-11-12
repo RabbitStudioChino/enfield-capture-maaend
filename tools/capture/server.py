@@ -34,6 +34,7 @@ MAX_REVIEW_BODY = 4 * 1024 * 1024
 REVIEW_IMPORT_ROUTES = {"/api/project/import", "/api/rescan/preview", "/api/rescan/start"}
 MAX_SELECTION_BYTES = 1024 * 1024
 MAX_SELECTIONS = 100
+MAX_LAUNCH_LOG_BYTES = 8000
 SELECTION_SCHEMA = "capture.saved-selections/1.0"
 SELECTION_FIELDS = {
     "id",
@@ -85,10 +86,13 @@ class CaptureApplication:
         check_path(self.local).mkdir(exist_ok=True)
         self.directory = check_path(self.local / "capture-ui")
         self.directory.mkdir(exist_ok=True)
-        for name in ("plans", "logs", "mesh", "tmp", "imports"):
+        for name in ("plans", "logs", "launches", "mesh", "tmp", "imports"):
             check_path(self.directory / name).mkdir(exist_ok=True)
         self.token = secrets.token_urlsafe(32)
         self.children = {}
+        self.launches = {}
+        self.cancel_paths = {}
+        self.closing = False
         self.lock = threading.Lock()
         self.mesh_lock = threading.Lock()
         self.evidence = {}
@@ -279,27 +283,125 @@ class CaptureApplication:
         )
         return env
 
-    def spawn(self, command, task_id, arguments):
+    def spawn(self, command, task_id, arguments, count=None):
         valid_id(task_id)
         with self.lock:
+            require(not self.closing, "控制页正在关闭，不能启动任务")
             previous = self.children.get(task_id, [])
             require(
                 command != "auto" or all(child.poll() is not None for child in previous),
                 "该任务已有控制进程，请先查看当前状态",
             )
-            log = check_path(self.directory / "logs" / f"{task_id}-{uuid.uuid4().hex}.log")
-            with log.open("xb") as output:
-                process = subprocess.Popen(
-                    self.cli_arguments(command, arguments),
-                    cwd=SOURCE_ROOT,
-                    env=self.environment(),
-                    stdin=subprocess.DEVNULL,
-                    stdout=output,
-                    stderr=subprocess.STDOUT,
-                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0,
+            receipt = check_path(self.directory / "launches" / f"{task_id}.json")
+            if command == "auto":
+                require(
+                    not task_path(self.workspace, task_id).exists() and not receipt.exists(),
+                    "任务 ID 已使用，请使用新 ID",
                 )
+            launch_id = uuid.uuid4().hex
+            log = check_path(self.directory / "logs" / f"{task_id}-{launch_id}.log")
+            record = {
+                "schema_version": "capture.ui-launch/1.0",
+                "task_id": task_id,
+                "launch_id": launch_id,
+                "command": command,
+                "count": count,
+                "created_utc": utc_now(),
+                "launcher_exit_code": None,
+                "launch_error": None,
+                "checkpoint_seen": command != "auto",
+            }
+            write_json(receipt, record, replace=command != "auto")
+            if command == "auto":
+                cancel = self.cancel_path(record)
+                arguments = [*arguments, "--launch-cancel", str(cancel)]
+            try:
+                with log.open("xb") as output:
+                    process = subprocess.Popen(
+                        self.cli_arguments(command, arguments),
+                        cwd=SOURCE_ROOT,
+                        env=self.environment(),
+                        stdin=subprocess.DEVNULL,
+                        stdout=output,
+                        stderr=subprocess.STDOUT,
+                        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0,
+                    )
+            except OSError as error:
+                record["launch_error"] = str(error)
+                write_json(receipt, record, replace=True)
+                raise
             self.children[task_id] = [child for child in previous if child.poll() is None] + [process]
+            self.launches[task_id] = (record, process)
+            if command == "auto":
+                self.cancel_paths[task_id] = (cancel, process)
+            threading.Thread(target=self.watch_launch, args=(record, process), daemon=True).start()
             return {"task_id": task_id, "pid": process.pid, "launch_log": str(log)}
+
+    def watch_launch(self, record, process):
+        code = process.wait()
+        with self.lock:
+            record["launcher_exit_code"] = code
+            if self.launches.get(record["task_id"], (None,))[0] is record:
+                try:
+                    record["checkpoint_seen"] |= check_path(
+                        task_path(self.workspace, record["task_id"]) / "checkpoint.json"
+                    ).exists()
+                    write_json(self.directory / "launches" / f"{record['task_id']}.json", record, replace=True)
+                except (OSError, ValueError) as error:
+                    print(f"启动退出记录保存失败，日志仍保留：{error}", file=sys.stderr)
+
+    def cancel_path(self, record):
+        return check_path(self.directory / "launches" / f"{record['task_id']}-{record['launch_id']}.cancel.json")
+
+    def launch(self, task_id):
+        with self.lock:
+            if task_id in self.launches:
+                record, process = self.launches[task_id]
+                record = dict(record)
+                record["launcher_exit_code"] = process.poll()
+                tracked = True
+            else:
+                path = check_path(self.directory / "launches" / f"{task_id}.json")
+                if not path.exists():
+                    return None
+                record = read_json(path)
+                tracked = False
+        require(
+            isinstance(record, dict)
+            and record.get("schema_version") == "capture.ui-launch/1.0"
+            and record.get("task_id") == task_id
+            and isinstance(record.get("launch_id"), str)
+            and len(record["launch_id"]) == 32
+            and all(character in "0123456789abcdef" for character in record["launch_id"])
+            and record.get("command") in ("auto", "resume")
+            and (record["command"] != "auto" or (type(record.get("count")) is int and 1 <= record["count"] <= 10000))
+            and isinstance(record.get("created_utc"), str)
+            and type(record.get("checkpoint_seen")) is bool
+            and (record.get("launcher_exit_code") is None or type(record["launcher_exit_code"]) is int)
+            and (record.get("launch_error") is None or isinstance(record["launch_error"], str)),
+            "本地启动记录损坏，请检查 local/capture-ui/launches/，原文件保留",
+        )
+        log = check_path(self.directory / "logs" / f"{task_id}-{record['launch_id']}.log")
+        record.update(tracked=tracked, launch_log=str(log), launch_log_tail="")
+        try:
+            with log.open("rb") as stream:
+                stream.seek(0, os.SEEK_END)
+                stream.seek(max(0, stream.tell() - MAX_LAUNCH_LOG_BYTES))
+                record["launch_log_tail"] = stream.read(MAX_LAUNCH_LOG_BYTES).decode("utf-8", errors="replace")
+        except OSError as error:
+            record["launch_log_error"] = str(error)
+        return record
+
+    def observed_checkpoint(self, task_id, launch):
+        if launch is None or launch["checkpoint_seen"]:
+            return
+        with self.lock:
+            if task_id in self.launches:
+                record = self.launches[task_id][0]
+            else:
+                record = read_json(self.directory / "launches" / f"{task_id}.json")
+            record["checkpoint_seen"] = True
+            write_json(self.directory / "launches" / f"{task_id}.json", record, replace=True)
 
     def run(self, command, task_id, arguments):
         valid_id(task_id)
@@ -326,18 +428,115 @@ class CaptureApplication:
         require(not task_path(self.workspace, task_id).exists(), "任务 ID 已存在，请恢复旧任务或使用新 ID")
         path = self.directory / "plans" / f"{plan['plan_id']}.json"
         write_json(path, plan)
-        result = self.spawn("auto", task_id, ["--task", task_id, "--plan", str(path), "--start-delay", "5"])
-        return {**result, "plan": plan, "message": "任务已启动，请在五秒内切回游戏并保持前台；状态以任务检查点为准"}
+        result = self.spawn(
+            "auto", task_id, ["--task", task_id, "--plan", str(path), "--start-delay", "5"], len(plan["waypoints"])
+        )
+        return {
+            **result,
+            "plan": plan,
+            "message": "启动请求已提交，正在核对资源并创建检查点。请切回游戏并保持前台；资源核对后预留五秒再控制游戏，运行状态以检查点为准",
+        }
 
     def status(self, task_id):
-        result = self.run("status", task_id, [])
-        with self.lock:
-            processes = self.children.get(task_id, [])
-            if processes:
-                result["launcher_exit_code"] = (
-                    None if any(child.poll() is None for child in processes) else processes[-1].returncode
-                )
+        root = task_path(self.workspace, task_id)
+        if check_path(root / "checkpoint.json").exists():
+            result = self.run("status", task_id, [])
+            result["checkpoint_ready"] = True
+            try:
+                launch = self.launch(task_id)
+            except (OSError, ValueError) as error:
+                result["launch_log_error"] = str(error)
+                launch = None
+            if launch is not None:
+                try:
+                    self.observed_checkpoint(task_id, launch)
+                except (OSError, ValueError) as error:
+                    result["launch_log_error"] = f"检查点已读取，但启动记录更新失败：{error}"
+        else:
+            launch = self.launch(task_id)
+            if launch is None or check_path(root / "checkpoint.json").exists():
+                result = self.run("status", task_id, [])
+                result["checkpoint_ready"] = True
+                return result
+            require(launch["command"] == "auto", "恢复任务的检查点缺失，请检查原任务目录和启动日志")
+            require(
+                not launch["checkpoint_seen"], f"任务检查点已丢失，请检查原任务目录；启动日志 {launch['launch_log']}"
+            )
+            code = launch["launcher_exit_code"]
+            cancelled = self.cancel_path(launch).exists()
+            state = "stopping" if cancelled else "starting"
+            error = None
+            if code is not None or launch["launch_error"]:
+                state = "stopped" if cancelled and code == 130 else "failed"
+                if state == "failed":
+                    error = launch["launch_error"] or f"启动进程在创建检查点前退出（退出码 {code}），请查看启动日志"
+            elif not launch["tracked"]:
+                state = "launch_unknown"
+                error = "控制页已重启，无法确认原启动进程状态；请查看启动日志。不会按历史 PID 推断任务正在运行"
+            result = {
+                "task_id": task_id,
+                "status": state,
+                "checkpoint_ready": False,
+                "session_id": None,
+                "generation": None,
+                "next_index": 0,
+                "count": launch["count"],
+                "active": launch["tracked"] and code is None,
+                "error": error,
+            }
+        if launch is not None:
+            result["launcher_tracked"] = launch["tracked"]
+            result["launch_pending"] = (
+                result.get("generation") is None and launch["launcher_exit_code"] is None and not launch["launch_error"]
+            )
+            for key in (
+                "launcher_exit_code",
+                "launch_error",
+                "launch_log",
+                "launch_log_tail",
+                "launch_log_error",
+                "created_utc",
+            ):
+                if key in launch:
+                    result["launch_created_utc" if key == "created_utc" else key] = launch[key]
         return result
+
+    def control(self, action, task_id, arguments):
+        root = task_path(self.workspace, task_id)
+        checkpoint = check_path(root / "checkpoint.json")
+        initializing = not checkpoint.exists()
+        if not initializing:
+            record = read_json(checkpoint)
+            require(isinstance(record, dict), "任务检查点损坏，必须为 JSON 对象")
+            if record.get("generation") is None:
+                launch = self.launch(task_id)
+                initializing = (
+                    launch is not None
+                    and launch["command"] == "auto"
+                    and launch["launcher_exit_code"] is None
+                    and not launch["launch_error"]
+                )
+        if initializing:
+            launch = self.launch(task_id)
+            require(launch is not None and launch["command"] == "auto", "任务检查点不存在，不能执行控制动作")
+            require(action == "stop", "任务仍在初始化，暂不能暂停或恢复；可请求停止并查看启动日志")
+            require("--generation" not in arguments, "任务尚未建立 generation，请重新读取状态后请求停止")
+            path = self.cancel_path(launch)
+            with self.lock:
+                if not path.exists():
+                    write_json(path, {"stop": True, "requested_utc": utc_now()})
+            return {"task_id": task_id, "result": "cancellation_requested", "status": "stopping"}
+        if action == "resume":
+            return self.spawn(action, task_id, ["--task", task_id, *arguments])
+        return self.run(action, task_id, arguments)
+
+    def export(self, task_id, arguments):
+        path = check_path(task_path(self.workspace, task_id) / "checkpoint.json")
+        require(path.exists(), "任务仍在初始化，暂不能导出")
+        record = read_json(path)
+        require(isinstance(record, dict), "任务检查点损坏，必须为 JSON 对象")
+        require(record.get("session_id"), "任务仍在初始化，暂不能导出")
+        return self.run("export", task_id, arguments)
 
     def events(self, task_id, after):
         root = task_path(self.workspace, task_id)
@@ -379,15 +578,26 @@ class CaptureApplication:
 
     def close(self):
         with self.lock:
+            self.closing = True
             children = [(task_id, list(processes)) for task_id, processes in self.children.items()]
         for task_id, processes in children:
             if any(process.poll() is None for process in processes):
                 try:
-                    self.run("stop", task_id, ["--command-id", "server-close-" + uuid.uuid4().hex])
+                    cancellation = self.cancel_paths.get(task_id)
+                    if cancellation is not None and cancellation[1].poll() is None:
+                        cancel = cancellation[0]
+                        with self.lock:
+                            if not check_path(cancel).exists():
+                                write_json(cancel, {"stop": True, "requested_utc": utc_now()})
+                    else:
+                        self.control("stop", task_id, ["--command-id", "server-close-" + uuid.uuid4().hex])
                     for process in processes:
                         process.wait(timeout=5)
                 except (OSError, ValueError, subprocess.TimeoutExpired) as error:
-                    print(f"任务 {task_id} 的停止结果需查看本地检查点和日志 {error}", file=sys.stderr)
+                    print(
+                        f"任务 {task_id} 尚未确认停止，请查看本地检查点及 local/capture-ui/logs/：{error}",
+                        file=sys.stderr,
+                    )
 
 
 class CaptureHandler(BaseHTTPRequestHandler):
@@ -542,14 +752,11 @@ class CaptureHandler(BaseHTTPRequestHandler):
                 if body.get("generation"):
                     require(isinstance(body["generation"], str), "generation 必须为字符串")
                     arguments.extend(["--generation", body["generation"]])
-                if action == "resume":
-                    self.send_json(app.spawn(action, task_id, ["--task", task_id, *arguments]), 202)
-                else:
-                    self.send_json(app.run(action, task_id, arguments))
+                self.send_json(app.control(action, task_id, arguments), 202 if action == "resume" else 200)
             elif route == "/api/export":
                 arguments = ["--session", body["session"]] if body.get("session") else []
                 require(all(isinstance(value, str) for value in arguments), "session 必须为字符串")
-                self.send_json(app.run("export", valid_id(body.get("task")), arguments))
+                self.send_json(app.export(valid_id(body.get("task")), arguments))
             else:
                 self.send_json({"error": "未知端点"}, 404)
         except (OSError, ValueError, KeyError, TypeError, RuntimeError, subprocess.TimeoutExpired) as error:
