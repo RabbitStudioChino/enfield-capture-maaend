@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import stat
 import subprocess
 import zipfile
@@ -55,18 +56,52 @@ def allowed(uri):
     )
 
 
+def locked_wheels(directory):
+    if not directory.is_dir():
+        raise ValueError(f"Missing Windows dependency wheelhouse: {directory}")
+    requirements = {}
+    lock = SOURCE_ROOT / "tools/capture/requirements-win.lock"
+    for line in lock.read_text(encoding="utf-8").splitlines():
+        if not line.strip() or line.startswith("#"):
+            continue
+        match = re.fullmatch(r"([\w.-]+)==(\S+) --hash=sha256:([a-f0-9]{64})", line)
+        if not match:
+            raise ValueError(f"Expected one pinned version and Windows wheel hash per lock line: {line}")
+        name, version, digest = match.groups()
+        key = (re.sub(r"[-_.]+", "-", name).lower(), version)
+        if key in requirements:
+            raise ValueError(f"Duplicate locked dependency: {name}=={version}")
+        requirements[key] = digest
+    if not requirements:
+        raise ValueError("The Windows dependency lock is empty")
+    wheels = {}
+    for path in sorted(directory.glob("*.whl")):
+        path = real_path(path)
+        name, version, *_ = path.name.split("-")
+        key = (re.sub(r"[-_.]+", "-", name).lower(), version)
+        if key not in requirements or key in wheels or sha256(path) != requirements[key]:
+            raise ValueError(f"Unpinned, duplicate or hash-mismatched Windows dependency wheel: {path.name}")
+        wheels[key] = path
+    missing = requirements.keys() - wheels.keys()
+    if missing:
+        raise ValueError(f"Incomplete Windows dependency wheelhouse; missing: {sorted(missing)}")
+    return wheels.values()
+
+
 def package(args):
     workspace = real_path(args.workspace)
     install = real_path(SOURCE_ROOT / args.install)
     sdk = real_path(SOURCE_ROOT / args.sdk)
     python = real_path(SOURCE_ROOT / args.python_package)
+    wheelhouse = real_path(SOURCE_ROOT / args.wheelhouse)
     output = real_path(SOURCE_ROOT / args.output)
-    if not all(path.is_relative_to(workspace) for path in (SOURCE_ROOT, install, sdk, python, output)):
+    if not all(path.is_relative_to(workspace) for path in (SOURCE_ROOT, install, sdk, python, wheelhouse, output)):
         raise ValueError("All package inputs and outputs must stay inside the workspace")
     if output.exists():
         raise ValueError("Refusing to overwrite an existing delivery")
     if sha256(python) != PYTHON_SHA256:
         raise ValueError("Official Python archive SHA-256 mismatch")
+    wheels = locked_wheels(wheelhouse)
     for relative in (
         "agent/cpp-algo.exe",
         "agent/go-service.exe",
@@ -168,6 +203,8 @@ def package(args):
         if path.is_file() and any(word in path.name.lower() for word in ("license", "notice")):
             add("licenses/WebView2/" + path.relative_to(webview).as_posix(), path)
     add("local/cache/python/python.3.12.10.nupkg", python)
+    for wheel in wheels:
+        add("local/cache/wheels/" + wheel.name, wheel)
     generated = {
         "Start-Region-Capture.cmd": b'@echo off\r\ncall "%~dp0scripts\\capture\\capture.cmd" serve\r\n',
         "SOURCE-NOTICE.txt": (
@@ -182,7 +219,8 @@ def package(args):
             f"Official PSF Python 3.12.10 x64 archive {PYTHON_URL}\nArchive SHA-256 {PYTHON_SHA256}\n"
             "Python license is included verbatim and also remains in the official archive.\n"
             "Run Start-Region-Capture.cmd and read docs/capture/automatic-capture.md or its English counterpart.\n"
-            "SDK Python dependencies are installed from PyPI with the locked Windows wheel hashes.\n"
+            "All locked Windows Python dependency wheels are bundled in local/cache/wheels and installed offline with hash verification.\n"
+            "Later launches reuse the prepared environment while Python and the dependency lock are unchanged.\n"
             "Tests, simulations and device validation were explicitly skipped for this feature. Build completion is not acceptance.\n"
             "Project test files, samples, logs, credentials and other application GUIs are excluded.\n"
             f"Unbundled documentation links resolve in the fixed source tree https://github.com/RabbitStudioChino/enfield-capture-maaend/tree/{commit}/docs/capture\n"
@@ -250,6 +288,7 @@ def main():
     parser.add_argument("--install", type=Path, default=Path("install"))
     parser.add_argument("--sdk", type=Path, default=Path("deps"))
     parser.add_argument("--python-package", required=True, type=Path)
+    parser.add_argument("--wheelhouse", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     package(parser.parse_args())
 

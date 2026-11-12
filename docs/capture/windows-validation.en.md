@@ -14,7 +14,7 @@ The probe connects only to an already running game. Input methods are fixed to `
 
 ## One-Click Execution
 
-1. Double-click `scripts\capture\capture.cmd`, which runs `doctor` by default. It verifies the cached official Python package and extracts it under `local\runtime\python-3.12.10`. If the cache is missing, it downloads the package from a fixed NuGet HTTPS URL and verifies SHA-256. It then creates `local\envs\capture-windows-py312` and installs locked dependencies online. The console displays environment and dependency setup progress. Reports and logs remain under `local\validation\windows-capture\<run-id>`, and the window stays open after a failure.
+1. Run `scripts\capture\capture.cmd doctor`. It verifies the cached official Python package and extracts it under `local\runtime\python-3.12.10`. It then creates `local\envs\capture-windows-py312` and installs locked dependencies offline from the bundled `local\cache\wheels`. Later runs reuse the environment while Python and the lock file are unchanged. The console displays environment and dependency setup progress. Reports and logs remain under `local\validation\windows-capture\<run-id>`, and the window stays open after a failure.
 2. After installation, a five-second countdown appears. Switch back to the game immediately and keep it in the foreground. `doctor` checks the system, Python and SDK versions, candidate windows, connection, and one original-size screenshot.
 3. Open Command Prompt in the extracted directory and run the command below. Switch back to the game during the countdown, then manually change the viewing direction or position about every two seconds for 12 attempts.
 
@@ -80,7 +80,7 @@ An earlier interrupted run demonstrated probe-report finalization and worker rea
 | Symptom | Results to return and action |
 | --- | --- |
 | Python package download, hash, or runtime validation fails | Return the Python bootstrap report and `install.log`. Use the updated delivery in a fresh directory. For a cache hash mismatch, follow the error to remove the corrupt `.nupkg` and retry |
-| Dependency download or hash verification fails | Preserve the setup report and `logs/install.log`, check connectivity, and run again |
+| Offline dependencies are missing, fail hash verification, or fail installation | Preserve the setup report and `logs/install.log`, and extract the complete updated delivery into a new directory. Offline installation failures never fall back to network downloads |
 | Missing SDK, wrong version, or DLL load failure | Return package versions, the connection error, and `logs/worker.log` |
 | Zero or multiple game windows | Return the candidate window list and confirm exactly one matching running game window |
 | Focus loss, minimization, or changed window identity | Restore the game to the foreground and start a new run |
@@ -89,7 +89,9 @@ An earlier interrupted run demonstrated probe-report finalization and worker rea
 
 ## SDK and Provenance
 
-Python uses the official NuGet `python/3.12.10` x64 package, cached at `local/cache/python/python.3.12.10.nupkg`. Updated delivery ZIPs include this cache, allowing initial Python extraction offline. SDK dependency installation still requires network access. The fixed SHA-256 is `0eb85c2dfccccf1b17352de4c397f69194035b7d37149eacc16f1147d93de3b8`. The package retains the CPython license. Missing-cache downloads use a 120-second timeout and at most five redirects. Extraction follows successful hash verification. Before execution, the launcher checks the version, x64 architecture, `venv`, and `ensurepip`. [Official Python NuGet guide](https://docs.python.org/3.12/using/windows.html#the-nuget-org-packages) [Pinned package version](https://www.nuget.org/packages/python/3.12.10)
+Python uses the official NuGet `python/3.12.10` x64 package, cached at `local/cache/python/python.3.12.10.nupkg`. Updated delivery ZIPs include this cache, allowing initial Python extraction offline. The fixed SHA-256 is `0eb85c2dfccccf1b17352de4c397f69194035b7d37149eacc16f1147d93de3b8`. The package retains the CPython license. Missing-cache downloads use a 120-second timeout and at most five redirects. Extraction follows successful hash verification. Before execution, the launcher checks the version, x64 architecture, `venv`, and `ensurepip`. [Official Python NuGet guide](https://docs.python.org/3.12/using/windows.html#the-nuget-org-packages) [Pinned package version](https://www.nuget.org/packages/python/3.12.10)
+
+All 11 locked Windows wheels are bundled in `local/cache/wheels/`. Packaging checks every version, completeness and SHA-256. First installation uses `--no-index --find-links`, retaining `--require-hashes --only-binary=:all:`, without accessing PyPI. An existing environment with matching Python version and lock-file hash is reused directly. A delivery missing the wheel directory is rejected. Missing or hash-mismatched wheels fail installation without a network fallback. Source checkouts without a wheel cache can still install from PyPI. After a 300-second overall timeout or installation failure, the error suggests checking access to `pypi.org` and `files.pythonhosted.org`, or using the complete offline delivery.
 
 The lock fixes `maafw==5.14.3`, `numpy==2.5.4`, `pillow==13.0.0`, `strenum==0.5.0`, and `maaagentbinary==1.0.1`, using Windows Python 3.12 x64 wheel hashes. The 5.14.3 Windows x64 wheel SHA-256 is `5fcd48d85b2110150f19848da777564abe64e4ca64966704cb8dec948d243ce5`, matching upstream `uv.lock` and PyPI release metadata. [PyPI release metadata](https://pypi.org/pypi/maafw/5.14.3/json)
 

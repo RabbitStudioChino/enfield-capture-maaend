@@ -83,6 +83,11 @@ jobs:
           python -B -m tools.setup.dep_3rdparty --webview2
           if ($LASTEXITCODE -ne 0) { throw 'Pinned WebView2 SDK setup failed' }
 
+      - name: Download locked Windows dependency wheels for offline installation
+        run: |
+          python -B -m pip --isolated download --require-hashes --only-binary=:all: --disable-pip-version-check --no-input --index-url https://pypi.org/simple --cache-dir local/cache/pip --dest local/cache/wheels -r tools/capture/requirements-win.lock
+          if ($LASTEXITCODE -ne 0) { throw 'Locked Windows dependency wheel download failed' }
+
       - name: Build production C++ and Go agents
         run: |
           python -B -m tools.setup.build_and_install --cpp-algo --ci --os win --arch x86_64
@@ -158,7 +163,7 @@ jobs:
 
       - name: Package the Windows capture delivery
         run: |
-          python -B scripts/capture/package_windows.py --workspace "$env:GITHUB_WORKSPACE" --install install --sdk deps --python-package local/downloads/python.3.12.10.nupkg --output local/deliverables/enfield-region-auto-capture-windows.zip
+          python -B scripts/capture/package_windows.py --workspace "$env:GITHUB_WORKSPACE" --install install --sdk deps --python-package local/downloads/python.3.12.10.nupkg --wheelhouse local/cache/wheels --output local/deliverables/enfield-region-auto-capture-windows.zip
           if ($LASTEXITCODE -ne 0) { throw 'Capture packaging failed' }
 
       - uses: actions/upload-artifact@v6

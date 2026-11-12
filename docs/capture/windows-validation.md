@@ -14,7 +14,7 @@
 
 ## 一键运行
 
-1. 双击 `scripts\capture\capture.cmd`，默认运行 `doctor`。它先校验本地缓存的官方 Python 包，再展开到 `local\runtime\python-3.12.10`。缓存缺失时从固定 NuGet HTTPS 地址下载并校验 SHA-256，随后创建 `local\envs\capture-windows-py312` 并在线安装锁定依赖。控制台显示环境与依赖安装进度，报告和日志留在 `local\validation\windows-capture\<run-id>`，失败后窗口保留。
+1. 运行 `scripts\capture\capture.cmd doctor`。它先校验本地缓存的官方 Python 包，再展开到 `local\runtime\python-3.12.10`，随后创建 `local\envs\capture-windows-py312`，从包内 `local\cache\wheels` 离线安装锁定依赖。Python 与锁文件未变化时，后续运行复用已有环境。控制台显示环境与依赖安装进度，报告和日志留在 `local\validation\windows-capture\<run-id>`，失败后窗口保留。
 2. 安装结束后出现 5 秒倒计时，立即切回游戏并保持前台。`doctor` 检查系统、Python、SDK 版本、候选窗口、连接与一张原尺寸截图。
 3. 打开命令提示符并切换到解压目录，运行以下命令。出现倒计时后切回游戏，约每两秒手动换一个观察方向或位置，采集 12 次。
 
@@ -80,7 +80,7 @@ local/validation/windows-capture/<run-id>/
 | 现象 | 返回内容与处理 |
 | --- | --- |
 | Python 包下载、哈希或运行时校验失败 | 返回 Python 引导报告与 `install.log`，确认使用新版交付包并解压到新目录；缓存哈希不符时按错误提示移除损坏的 `.nupkg` 后重试 |
-| 依赖下载或哈希验证失败 | 保留安装报告与 `logs/install.log`，确认网络后重新运行 |
+| 离线依赖缺失、哈希验证或安装失败 | 保留安装报告与 `logs/install.log`，将完整新版交付包解压到新目录；离线安装失败不会改用联网下载 |
 | SDK 缺失、版本错误或 DLL 加载失败 | 返回报告中的包版本、连接错误与 `logs/worker.log` |
 | 游戏窗口为零个或多个 | 返回候选窗口列表，确认游戏正在运行且只有一个匹配窗口 |
 | 失焦、最小化或窗口身份变化 | 回到游戏前台并恢复窗口，再开始新的运行 |
@@ -89,7 +89,9 @@ local/validation/windows-capture/<run-id>/
 
 ## SDK 与来源依据
 
-Python 使用官方 NuGet `python/3.12.10` x64 包，缓存路径为 `local/cache/python/python.3.12.10.nupkg`。新版交付 ZIP 内置此缓存，首次准备 Python 可直接离线展开，SDK 依赖安装仍需联网。固定 SHA-256 为 `0eb85c2dfccccf1b17352de4c397f69194035b7d37149eacc16f1147d93de3b8`，包内保留 CPython 许可。缓存缺失时下载限制为 120 秒并允许最多五次重定向，哈希通过后才展开，运行前检查版本、x64 架构、`venv` 与 `ensurepip`。[Python 官方 NuGet 说明](https://docs.python.org/3.12/using/windows.html#the-nuget-org-packages) [固定包版本](https://www.nuget.org/packages/python/3.12.10)
+Python 使用官方 NuGet `python/3.12.10` x64 包，缓存路径为 `local/cache/python/python.3.12.10.nupkg`。新版交付 ZIP 内置此缓存，首次准备 Python 可直接离线展开。固定 SHA-256 为 `0eb85c2dfccccf1b17352de4c397f69194035b7d37149eacc16f1147d93de3b8`，包内保留 CPython 许可。缓存缺失时下载限制为 120 秒并允许最多五次重定向，哈希通过后才展开，运行前检查版本、x64 架构、`venv` 与 `ensurepip`。[Python 官方 NuGet 说明](https://docs.python.org/3.12/using/windows.html#the-nuget-org-packages) [固定包版本](https://www.nuget.org/packages/python/3.12.10)
+
+全部 11 个锁定的 Windows wheel 随包保存在 `local/cache/wheels/`。打包时逐项检查版本、完整性与 SHA-256；首次安装使用 `--no-index --find-links`，保留 `--require-hashes --only-binary=:all:`，无需访问 PyPI。已有匹配 Python 版本和锁文件哈希的环境直接复用。交付包缺少 wheel 目录时拒绝安装；目录内缺包或哈希不符时安装失败，不联网回退。源码目录未提供 wheel 缓存时仍可从 PyPI 安装，300 秒整体超时或安装失败后会提示检查 `pypi.org`、`files.pythonhosted.org`，或改用完整离线交付包。
 
 锁文件固定 `maafw==5.14.3`、`numpy==2.5.4`、`pillow==13.0.0`、`strenum==0.5.0` 和 `maaagentbinary==1.0.1`，使用 Windows Python 3.12 x64 wheel 哈希。5.14.3 Windows x64 wheel 的 SHA-256 为 `5fcd48d85b2110150f19848da777564abe64e4ca64966704cb8dec948d243ce5`，与上游 `uv.lock` 及 PyPI 发布元数据一致。[PyPI 发布元数据](https://pypi.org/pypi/maafw/5.14.3/json)
 

@@ -1,11 +1,11 @@
 # Automatic region capture
 
 This page describes the local controls for automatic navigation and photography from a real map region or place name.  
-Updated 2026-11-09.
+Updated 2026-11-12.
 
 ## Launch
 
-Extract the complete Windows x64 capture delivery into a new real directory. It needs matching `cpp-algo.exe`, `go-service.exe`, MaaFramework 5.14.3 DLLs, navigation meshes, localization models, map images and Pipeline resources. The launcher prepares Python 3.12.10 and locked dependencies on first use. SDK dependency installation requires network access. Run from the repository root.
+Extract the complete Windows x64 capture delivery into a new real directory. It needs matching `cpp-algo.exe`, `go-service.exe`, MaaFramework 5.14.3 DLLs, navigation meshes, localization models, map images and Pipeline resources. The package includes the official Python 3.12.10 cache and all locked dependencies in `local/cache/wheels/`. First launch prepares the environment offline and verifies wheel hashes. Later launches reuse the environment without downloading or reinstalling dependencies while Python and the lock file are unchanged. Run from the repository root.
 
 ```cmd
 scripts\capture\capture.cmd serve

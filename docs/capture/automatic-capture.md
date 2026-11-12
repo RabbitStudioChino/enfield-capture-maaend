@@ -1,11 +1,11 @@
 # 区域自动采集
 
 本文说明按真实地图区域或地名启动自动导航与摄影的本地控制页。  
-更新日期 2026-11-09。
+更新日期 2026-11-12。
 
 ## 启动
 
-使用完整 Windows x64 采集交付包，解压到新的真实目录。包需包含匹配的 `cpp-algo.exe`、`go-service.exe`、MaaFramework 5.14.3 DLL、导航网格、定位模型、底图和 Pipeline。首次启动器准备 Python 3.12.10 与锁定依赖，SDK 依赖安装需要联网。以仓库根目录作为当前目录运行。
+使用完整 Windows x64 采集交付包，解压到新的真实目录。包需包含匹配的 `cpp-algo.exe`、`go-service.exe`、MaaFramework 5.14.3 DLL、导航网格、定位模型、底图和 Pipeline。包内置官方 Python 3.12.10 缓存和 `local/cache/wheels/` 下的全部锁定依赖，首次启动离线准备环境并校验 wheel 哈希；Python 与锁文件未变化时，后续启动直接复用环境，无需重新下载或安装依赖。以仓库根目录作为当前目录运行。
 
 ```cmd
 scripts\capture\capture.cmd serve

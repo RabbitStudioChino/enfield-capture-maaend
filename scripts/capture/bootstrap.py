@@ -163,6 +163,10 @@ def main():
         ready = python.is_file() and marker.is_file() and json.loads(marker.read_bytes()) == identity
         if ready:
             report["reused_environment"] = True
+            print(
+                "Reusing the prepared capture environment; no dependency download or installation is needed.",
+                flush=True,
+            )
             report["status"] = "installed"
             exit_code = 0
         else:
@@ -200,6 +204,22 @@ def main():
 
 
 def install_dependencies(workspace, run, venv, python, environment, lock, cache, marker, identity):
+    wheelhouse = SOURCE_ROOT / "local/cache/wheels"
+    if wheelhouse.exists() or wheelhouse.is_symlink() or wheelhouse.is_junction():
+        wheelhouse = local_directory(SOURCE_ROOT, "local/cache/wheels")
+        source = ["--no-index", "--find-links", str(wheelhouse)]
+        description = f"bundled offline wheels at {wheelhouse}"
+        failure_help = (
+            "Extract the complete updated Windows delivery, including local/cache/wheels, into a new directory."
+        )
+    else:
+        if (SOURCE_ROOT / "DELIVERY-MANIFEST.json").exists():
+            raise RuntimeError(
+                "Bundled wheels are missing. Extract the complete updated Windows delivery into a new directory."
+            )
+        source = ["--index-url", "https://pypi.org/simple"]
+        description = "PyPI (source checkout without bundled wheels; network access is required)"
+        failure_help = "Check access to pypi.org and files.pythonhosted.org, or use the updated Windows delivery with bundled wheels."
     with installation_guard(workspace):
         with (run / "logs/install.log").open("wb") as log:
             print("Creating the local Python environment (up to 120 seconds).", flush=True)
@@ -212,36 +232,45 @@ def install_dependencies(workspace, run, venv, python, environment, lock, cache,
                 check=True,
                 timeout=120,
             )
-            print(f"Installing locked dependencies (up to 300 seconds). Log: {run / 'logs/install.log'}", flush=True)
-            subprocess.run(
-                [
-                    str(python),
-                    "-m",
-                    "pip",
-                    "--isolated",
-                    "install",
-                    "--require-hashes",
-                    "--only-binary=:all:",
-                    "--disable-pip-version-check",
-                    "--no-input",
-                    "--retries",
-                    "1",
-                    "--timeout",
-                    "30",
-                    "--index-url",
-                    "https://pypi.org/simple",
-                    "--cache-dir",
-                    str(cache),
-                    "-r",
-                    str(lock),
-                ],
-                cwd=SOURCE_ROOT,
-                env=environment,
-                stdout=log,
-                stderr=subprocess.STDOUT,
-                check=True,
-                timeout=300,
+            print(
+                f"Installing locked dependencies from {description} (up to 300 seconds). Log: {run / 'logs/install.log'}",
+                flush=True,
             )
+            try:
+                subprocess.run(
+                    [
+                        str(python),
+                        "-m",
+                        "pip",
+                        "--isolated",
+                        "install",
+                        "--require-hashes",
+                        "--only-binary=:all:",
+                        "--disable-pip-version-check",
+                        "--no-input",
+                        "--retries",
+                        "1",
+                        "--timeout",
+                        "30",
+                        *source,
+                        "--cache-dir",
+                        str(cache),
+                        "-r",
+                        str(lock),
+                    ],
+                    cwd=SOURCE_ROOT,
+                    env=environment,
+                    stdout=log,
+                    stderr=subprocess.STDOUT,
+                    check=True,
+                    timeout=300,
+                )
+            except subprocess.TimeoutExpired as error:
+                raise RuntimeError(
+                    f"Dependency installation from {description} exceeded 300 seconds. {failure_help}"
+                ) from error
+            except subprocess.CalledProcessError as error:
+                raise RuntimeError(f"Dependency installation from {description} failed. {failure_help}") from error
         write_json(marker, identity)
 
 
