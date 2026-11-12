@@ -1,0 +1,262 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://schemas.endfield.local/capture/1.0/rescan-links.schema.json",
+    "type": "object",
+    "required": [
+        "schema_version",
+        "request",
+        "frames"
+    ],
+    "properties": {
+        "schema_version": {
+            "const": "capture.rescan-links/1.0"
+        },
+        "request": {
+            "type": "object",
+            "required": [
+                "schema_version",
+                "request_id",
+                "project_id",
+                "round_id",
+                "reconstruction_revision",
+                "region_id",
+                "source",
+                "budget",
+                "issues",
+                "actions"
+            ],
+            "properties": {
+                "schema_version": {
+                    "const": "reconstruction.rescan/2.0"
+                },
+                "request_id": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
+                },
+                "project_id": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
+                },
+                "round_id": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
+                },
+                "reconstruction_revision": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                },
+                "region_id": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
+                },
+                "source": {
+                    "type": "object",
+                    "required": [
+                        "bundle_sha256",
+                        "auto_plan_sha256",
+                        "catalog_sha256",
+                        "resources_sha256"
+                    ],
+                    "properties": {
+                        "bundle_sha256": {
+                            "type": "string",
+                            "pattern": "^[0-9a-f]{64}$"
+                        },
+                        "auto_plan_sha256": {
+                            "type": "string",
+                            "pattern": "^[0-9a-f]{64}$"
+                        },
+                        "catalog_sha256": {
+                            "type": "string",
+                            "pattern": "^[0-9a-f]{64}$"
+                        },
+                        "resources_sha256": {
+                            "type": "string",
+                            "pattern": "^[0-9a-f]{64}$"
+                        }
+                    },
+                    "additionalProperties": false
+                },
+                "budget": {
+                    "type": "object",
+                    "required": [
+                        "max_actions"
+                    ],
+                    "properties": {
+                        "max_actions": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 128
+                        }
+                    },
+                    "additionalProperties": false
+                },
+                "issues": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 128,
+                    "items": {
+                        "type": "object",
+                        "required": [
+                            "issue_id",
+                            "description",
+                            "evidence"
+                        ],
+                        "properties": {
+                            "issue_id": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
+                            },
+                            "description": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 2000
+                            },
+                            "evidence": {
+                                "type": "array",
+                                "minItems": 1,
+                                "maxItems": 128,
+                                "uniqueItems": true,
+                                "items": {
+                                    "type": "object",
+                                    "required": [
+                                        "session_id",
+                                        "frame_id"
+                                    ],
+                                    "properties": {
+                                        "session_id": {
+                                            "type": "string",
+                                            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
+                                        },
+                                        "frame_id": {
+                                            "type": "string",
+                                            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
+                                        }
+                                    },
+                                    "additionalProperties": false
+                                }
+                            }
+                        },
+                        "additionalProperties": false
+                    }
+                },
+                "actions": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 128,
+                    "items": {
+                        "type": "object",
+                        "required": [
+                            "action_id",
+                            "issue_id",
+                            "target_candidate_id",
+                            "heading_degrees",
+                            "reason"
+                        ],
+                        "properties": {
+                            "action_id": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
+                            },
+                            "issue_id": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
+                            },
+                            "target_candidate_id": {
+                                "type": "string",
+                                "pattern": "^candidate-[0-9a-f]{48}$"
+                            },
+                            "heading_degrees": {
+                                "type": "number",
+                                "minimum": 0,
+                                "exclusiveMaximum": 360
+                            },
+                            "reason": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 2000
+                            }
+                        },
+                        "additionalProperties": false
+                    }
+                }
+            },
+            "additionalProperties": false
+        },
+        "frames": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 128,
+            "items": {
+                "type": "object",
+                "required": [
+                    "session_id",
+                    "frame_id",
+                    "waypoint_id",
+                    "image_uri",
+                    "image_sha256",
+                    "action"
+                ],
+                "properties": {
+                    "session_id": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "frame_id": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "waypoint_id": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "image_uri": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "image_sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "action": {
+                        "type": "object",
+                        "required": [
+                            "action_id",
+                            "issue_id",
+                            "target_candidate_id",
+                            "heading_degrees",
+                            "reason"
+                        ],
+                        "properties": {
+                            "action_id": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
+                            },
+                            "issue_id": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
+                            },
+                            "target_candidate_id": {
+                                "type": "string",
+                                "pattern": "^candidate-[0-9a-f]{48}$"
+                            },
+                            "heading_degrees": {
+                                "type": "number",
+                                "minimum": 0,
+                                "exclusiveMaximum": 360
+                            },
+                            "reason": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 2000
+                            }
+                        },
+                        "additionalProperties": false
+                    }
+                },
+                "additionalProperties": false
+            }
+        }
+    },
+    "additionalProperties": false
+}

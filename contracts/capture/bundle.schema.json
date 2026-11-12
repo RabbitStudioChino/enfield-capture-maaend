@@ -54,6 +54,15 @@
                 "$ref": "https://schemas.endfield.local/capture/1.0/common.schema.json#/$defs/file"
             },
             "minItems": 4
+        },
+        "auto_plan_uri": {
+            "const": "auto-plan.json"
+        },
+        "rescan_candidates_uri": {
+            "const": "rescan-candidates.json"
+        },
+        "rescan_links_uri": {
+            "const": "rescan-links.json"
         }
     }
 }

@@ -135,7 +135,7 @@ def build_plan(workspace, request):
             )
     require(resource_hashes(uris) == resources, "规划期间资源发生变化，请重新规划")
     require(verify_resource_mirror(workspace, resources) == runtime_resources, "规划期间运行资源发生变化，请重新规划")
-    return {
+    plan = {
         "schema_version": "capture.auto-plan/1.0",
         "plan_id": plan_id,
         "created_utc": utc_now(),
@@ -167,3 +167,10 @@ def build_plan(workspace, request):
             "route": result.get("route", []),
         },
     }
+    from .rescan import candidate_catalog
+
+    for candidate in candidate_catalog(plan)["candidates"]:
+        for point in waypoints:
+            if point["waypoint_id"] in candidate["source_waypoint_ids"]:
+                point["candidate_id"] = candidate["candidate_id"]
+    return plan

@@ -116,10 +116,35 @@
                                 "type": "boolean"
                             }
                         }
+                    },
+                    "target_deck_y": {
+                        "type": "number",
+                        "minimum": -100000,
+                        "maximum": 100000
+                    },
+                    "auto_plan_waypoint_id": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
+                    },
+                    "candidate_id": {
+                        "type": "string",
+                        "pattern": "^candidate-[0-9a-f]{48}$"
+                    },
+                    "rescan_action_id": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
+                    },
+                    "rescan_issue_id": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
                     }
                 }
             },
             "minItems": 1
+        },
+        "auto_plan_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
         }
     }
 }

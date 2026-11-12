@@ -19,6 +19,7 @@ def verify_plan(plan, workspace=None, install=None):
         isinstance(plan, dict) and plan.get("schema_version") == "capture.auto-plan/1.0",
         "Invalid automatic capture plan",
     )
+    check_record(task.make_validators(), "auto-plan", plan, "automatic plan")
     points = plan.get("waypoints")
     require(isinstance(points, list) and 0 < len(points) <= 10000, "Automatic plan must contain 1-10000 views")
     require(isinstance(plan.get("resources"), list) and bool(plan["resources"]), "Plan has no resource hash snapshot")
@@ -80,38 +81,47 @@ def freeze_all(root):
 
 def start_auto(workspace, request_or_plan, task_id=None, start_delay=5):
     workspace = task.check_path(workspace)
-    if request_or_plan.get("schema_version") == "capture.auto-plan/1.0":
-        plan = verify_plan(request_or_plan, workspace)
-    else:
-        from .planner import build_plan
-
-        plan = verify_plan(build_plan(workspace, request_or_plan), workspace)
-    install = native_install(workspace)
-    sdk_version = version("maafw").removeprefix("v")
-    require(sdk_version == "5.14.3", "Automatic capture requires locked maafw 5.14.3")
     task_id = task_id or "auto-" + datetime.now(UTC).strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:8]
-    region = plan["region"]
-    metadata = {
-        "execution_mode": "auto",
-        "auto_plan": plan,
-        "region_id": "region-" + str(region["id"]),
-        "map_coordinates": plan["map_coordinates"],
-        "runtime_root": install.relative_to(workspace).as_posix(),
-        "runtime_files": runtime_snapshot(workspace, install),
-        "sdk_version": sdk_version,
-        "source": {
-            "kind": "game_capture",
-            "upstream_commit": task.UPSTREAM,
-            "collector_version": "capture.auto/1.0-maafw-" + sdk_version,
-            "submodule_commits": {},
-            "game_version": None,
-            "description": "MaaEnd MapNavigateAction and native CaptureViewAction. BaseNav navigation observations are coarse priors. "
-            "Camera pose, pitch, FOV, native render timestamp and geometric quality remain unknown.",
-        },
-    }
-    root = task.create_task(workspace, task_id, len(plan["waypoints"]), 0.25, region["name"], metadata)
-    with task.exclusive(root / ".task.lock"), task.exclusive(root.parent / ".controller.lock"):
-        return AutoTaskRunner(root, task.load_task(root), start_delay).run()
+    parent = task.task_path(workspace, task_id, create=True).parent
+    with task.exclusive(parent / ".controller.lock"):
+        if request_or_plan.get("schema_version") == "capture.auto-plan/1.0":
+            plan = verify_plan(request_or_plan, workspace)
+        else:
+            from .planner import build_plan
+
+            plan = verify_plan(build_plan(workspace, request_or_plan), workspace)
+        if "rescan_request" in plan:
+            from .rescan import resolve_rescan
+
+            source = plan["rescan_source"]
+            plan = resolve_rescan(
+                workspace, plan["rescan_request"], workspace / source["review_uri"], workspace / source["bundle_uri"]
+            )
+        install = native_install(workspace)
+        sdk_version = version("maafw").removeprefix("v")
+        require(sdk_version == "5.14.3", "Automatic capture requires locked maafw 5.14.3")
+        region = plan["region"]
+        metadata = {
+            "execution_mode": "auto",
+            "auto_plan": plan,
+            "region_id": "region-" + str(region["id"]),
+            "map_coordinates": plan["map_coordinates"],
+            "runtime_root": install.relative_to(workspace).as_posix(),
+            "runtime_files": runtime_snapshot(workspace, install),
+            "sdk_version": sdk_version,
+            "source": {
+                "kind": "game_capture",
+                "upstream_commit": task.UPSTREAM,
+                "collector_version": "capture.auto/1.0-maafw-" + sdk_version,
+                "submodule_commits": {},
+                "game_version": None,
+                "description": "MaaEnd MapNavigateAction and native CaptureViewAction. BaseNav navigation observations are coarse priors. "
+                "Camera pose, pitch, FOV, native render timestamp and geometric quality remain unknown.",
+            },
+        }
+        root = task.create_task(workspace, task_id, len(plan["waypoints"]), 0.25, region["name"], metadata)
+        with task.exclusive(root / ".task.lock"):
+            return AutoTaskRunner(root, task.load_task(root), start_delay).run()
 
 
 class AutoTaskRunner(task.TaskRunner):
@@ -130,6 +140,33 @@ class AutoTaskRunner(task.TaskRunner):
             runtime_snapshot(self.workspace, install) == self.task["runtime_files"],
             "Native runtime file set or contents changed after task creation",
         )
+        plan = self.task["auto_plan"]
+        if "rescan_request" in plan:
+            from .rescan import resolve_rescan
+
+            source = plan["rescan_source"]
+            trusted = resolve_rescan(
+                self.workspace,
+                plan["rescan_request"],
+                self.workspace / source["review_uri"],
+                self.workspace / source["bundle_uri"],
+                ignore_task=self.root.name,
+            )
+            for key in ("region", "selection", "map_coordinates", "resources", "runtime_resources"):
+                require(plan[key] == trusted[key], "Resolved rescan source changed")
+            keys = (
+                "position_xy",
+                "target_deck_y",
+                "yaw_degrees",
+                "candidate_id",
+                "rescan_action_id",
+                "rescan_issue_id",
+            )
+            require(
+                [{key: point[key] for key in keys} for point in plan["waypoints"]]
+                == [{key: point[key] for key in keys} for point in trusted["waypoints"]],
+                "Resolved rescan targets changed",
+            )
 
     def preflight(self):
         self.verify_resources()

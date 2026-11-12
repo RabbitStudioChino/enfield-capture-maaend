@@ -248,6 +248,15 @@ def session_data(root, task, validators):
         batch_uris.append(path.relative_to(root).as_posix())
     ordered = dict(sorted(frames.items(), key=lambda pair: pair[1]["waypoint_id"]))
     check_frames(ordered, session, plan, files)
+    automatic_files = {}
+    if (root / "auto-plan.json").exists() or (root / "rescan-candidates.json").exists():
+        from .validate import check_automatic_plan
+
+        automatic = read_json(root / "auto-plan.json")
+        candidates = read_json(root / "rescan-candidates.json")
+        require(automatic == task.get("auto_plan"), "immutable automatic plan changed")
+        check_automatic_plan(automatic, candidates, plan, validators)
+        automatic_files = {"auto-plan.json": automatic, "rescan-candidates.json": candidates}
     return {
         "session": session,
         "plan": plan,
@@ -255,6 +264,7 @@ def session_data(root, task, validators):
         "files": files,
         "batch_uris": batch_uris,
         "indices": indices,
+        "automatic_files": automatic_files,
     }
 
 
@@ -385,15 +395,33 @@ class TaskRunner:
         if self.task.get("execution_mode") == "auto":
             self.plan["schema_version"] = "capture.plan/1.0"
             self.plan.pop("execution_mode")
+            self.plan["auto_plan_id"] = self.task["auto_plan"]["plan_id"]
+            from .rescan import candidate_catalog
+
+            catalog = candidate_catalog(self.task["auto_plan"])
+            candidate_ids = {
+                point: candidate["candidate_id"]
+                for candidate in catalog["candidates"]
+                for point in candidate["source_waypoint_ids"]
+            }
             for waypoint, target in zip(
                 self.plan["waypoints"], self.task["auto_plan"]["waypoints"][self.next_index :], strict=True
             ):
                 waypoint["position_xy"] = target["position_xy"]
+                waypoint["segment_id"] = target["segment_id"]
+                waypoint["target_deck_y"] = target["target_deck_y"]
+                waypoint["auto_plan_waypoint_id"] = target["waypoint_id"]
+                waypoint["candidate_id"] = candidate_ids[target["waypoint_id"]]
+                for key in ("rescan_action_id", "rescan_issue_id"):
+                    if key in target:
+                        waypoint[key] = target[key]
                 waypoint["camera_intent"] = {
                     "yaw_degrees": target["yaw_degrees"],
                     "pitch_degrees": None,
                     "settle_required": True,
                 }
+            write_json(self.session_root / "auto-plan.json", self.task["auto_plan"])
+            write_json(self.session_root / "rescan-candidates.json", catalog)
         check_record(self.validators, "plan", self.plan, "capture plan")
         write_json(self.session_root / "plan.json", self.plan)
 
@@ -755,6 +783,7 @@ def export(workspace, task, session_id=None):
         staging = check_path(root / "exports" / ("." + export_id + ".partial"))
         staging.mkdir()
         uris = {"session.json", "plan.json", *data["files"], *data["batch_uris"]}
+        uris.update(data["automatic_files"])
         for uri in sorted(uris):
             path = check_path(safe_path(source, uri))
             target = staging / uri
@@ -767,6 +796,33 @@ def export(workspace, task, session_id=None):
                 for frame in data["frames"].values()
             ),
         )
+        extra = {}
+        if data["automatic_files"]:
+            extra.update(auto_plan_uri="auto-plan.json", rescan_candidates_uri="rescan-candidates.json")
+            automatic = data["automatic_files"]["auto-plan.json"]
+            if "rescan_request" in automatic:
+                request = automatic["rescan_request"]
+                actions = {item["action_id"]: item for item in request["actions"]}
+                points = {item["waypoint_id"]: item for item in data["plan"]["waypoints"]}
+                write_json(
+                    staging / "rescan-links.json",
+                    {
+                        "schema_version": "capture.rescan-links/1.0",
+                        "request": request,
+                        "frames": [
+                            {
+                                "session_id": session_id,
+                                "frame_id": frame["frame_id"],
+                                "waypoint_id": frame["waypoint_id"],
+                                "image_uri": frame["image"]["uri"],
+                                "image_sha256": frame["image"]["sha256"],
+                                "action": actions[points[frame["waypoint_id"]]["rescan_action_id"]],
+                            }
+                            for frame in data["frames"].values()
+                        ],
+                    },
+                )
+                extra["rescan_links_uri"] = "rescan-links.json"
         files = [
             {"uri": path.relative_to(staging).as_posix(), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
             for path in sorted(staging.rglob("*"))
@@ -785,6 +841,7 @@ def export(workspace, task, session_id=None):
                 "frames_uri": "frames.jsonl",
                 "batch_uris": data["batch_uris"],
                 "files": files,
+                **extra,
             },
         )
         validate_bundle(staging)

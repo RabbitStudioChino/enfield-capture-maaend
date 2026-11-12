@@ -216,6 +216,56 @@ def check_frames(frames, session, plan, files):
             require(bool(frame["quality"]["rejection_reasons"]), f"{label}: rejected frame has no reason")
 
 
+def check_automatic_plan(automatic, candidates, plan, validators):
+    from .rescan import candidate_catalog
+
+    check_record(validators, "auto-plan", automatic, "auto-plan.json")
+    check_record(validators, "rescan-candidates", candidates, "rescan-candidates.json")
+    require(candidates == candidate_catalog(automatic), "candidate directory differs from frozen automatic plan")
+    require(plan.get("auto_plan_id") == automatic["plan_id"], "session automatic plan identity mismatch")
+    require(plan["region_id"] == candidates["region_id"], "automatic plan region mismatch")
+    require(plan["map_coordinates"] == automatic["map_coordinates"], "automatic plan coordinate frame mismatch")
+    originals = {}
+    for index, point in enumerate(automatic["waypoints"]):
+        require(point["waypoint_id"] == f"point-{index + 1:05d}", "automatic waypoint IDs are not sequential")
+        originals[point["waypoint_id"]] = point
+    candidate_ids = {
+        point: candidate["candidate_id"]
+        for candidate in candidates["candidates"]
+        for point in candidate["source_waypoint_ids"]
+    }
+    for waypoint in plan["waypoints"]:
+        original_id = waypoint.get("auto_plan_waypoint_id")
+        require(original_id == waypoint["waypoint_id"] and original_id in originals, "unknown source waypoint")
+        original = originals[original_id]
+        for key in ("position_xy", "target_deck_y", "segment_id"):
+            require(waypoint.get(key) == original[key], f"automatic waypoint {key} changed")
+        require(waypoint.get("candidate_id") == candidate_ids[original_id], "automatic candidate identity changed")
+        require(
+            original.get("candidate_id", candidate_ids[original_id]) == candidate_ids[original_id],
+            "source automatic candidate identity is invalid",
+        )
+        intent = waypoint["camera_intent"]
+        require(
+            intent == {"yaw_degrees": original["yaw_degrees"], "pitch_degrees": None, "settle_required": True},
+            "automatic camera intent changed",
+        )
+        for key in ("rescan_action_id", "rescan_issue_id"):
+            require(waypoint.get(key) == original.get(key), "rescan waypoint mapping changed")
+    request = automatic.get("rescan_request")
+    require((request is None) == (automatic.get("rescan_source") is None), "incomplete rescan source binding")
+    if request is not None:
+        require(len(request["actions"]) == len(automatic["waypoints"]), "rescan action coverage mismatch")
+        for point, action in zip(automatic["waypoints"], request["actions"], strict=True):
+            require(
+                point.get("rescan_action_id") == action["action_id"]
+                and point.get("rescan_issue_id") == action["issue_id"]
+                and point.get("candidate_id") == action["target_candidate_id"]
+                and point["yaw_degrees"] == action["heading_degrees"],
+                "rescan action differs from the resolved waypoint",
+            )
+
+
 def validate_bundle(directory):
     """Return manifest and counts, or raise BundleValidationError. Reads only."""
     root = Path(directory).absolute()
@@ -259,6 +309,39 @@ def validate_bundle(directory):
     )
     frames = read_frames(contents["frames.jsonl"], validators)
     check_frames(frames, session, plan, files)
+    automatic_uris = {"auto-plan.json", "rescan-candidates.json"}
+    if automatic_uris.intersection(files) or manifest.get("auto_plan_uri") is not None:
+        require(automatic_uris <= files.keys(), "incomplete frozen automatic planning metadata")
+        require(
+            manifest.get("auto_plan_uri") == "auto-plan.json"
+            and manifest.get("rescan_candidates_uri") == "rescan-candidates.json",
+            "automatic planning metadata is not declared by the manifest",
+        )
+        automatic = load_json(contents["auto-plan.json"], "auto-plan.json")
+        candidates = load_json(contents["rescan-candidates.json"], "rescan-candidates.json")
+        check_automatic_plan(automatic, candidates, plan, validators)
+        if automatic.get("rescan_request") is not None:
+            require(manifest.get("rescan_links_uri") == "rescan-links.json", "missing rescan frame links")
+            links = load_json(contents.get("rescan-links.json", b""), "rescan-links.json")
+            check_record(validators, "rescan-links", links, "rescan-links.json")
+            require(links["request"] == automatic["rescan_request"], "rescan request changed in frame links")
+            actions = {item["action_id"]: item for item in links["request"]["actions"]}
+            points = {item["waypoint_id"]: item for item in plan["waypoints"]}
+            expected = [
+                {
+                    "session_id": session["session_id"],
+                    "frame_id": frame["frame_id"],
+                    "waypoint_id": frame["waypoint_id"],
+                    "image_uri": frame["image"]["uri"],
+                    "image_sha256": frame["image"]["sha256"],
+                    "action": actions[points[frame["waypoint_id"]]["rescan_action_id"]],
+                }
+                for frame in frames.values()
+            ]
+            require(links["frames"] == expected, "rescan issue/action/image links changed")
+    else:
+        require(not manifest.get("rescan_candidates_uri"), "candidate directory requires frozen automatic plan")
+        require(not manifest.get("rescan_links_uri"), "rescan links require frozen automatic plan")
     batch_ids = set()
     referenced_frames = set()
     for uri in manifest["batch_uris"]:
