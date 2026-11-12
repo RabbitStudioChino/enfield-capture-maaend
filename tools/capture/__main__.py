@@ -28,6 +28,7 @@ def main(argv=None):
     command.add_argument("--views", type=lambda value: bounded_number(value, 1, 12, True), default=8)
     command.add_argument("--max-points", type=lambda value: bounded_number(value, 1, 512, True), default=160)
     command.add_argument("--start-delay", type=lambda value: bounded_number(value, 0, 60), default=5)
+    command.add_argument("--launch-cancel", type=Path, help=argparse.SUPPRESS)
     command = commands.add_parser("serve")
     command.add_argument("--workspace", required=True, type=Path)
     command.add_argument("--port", type=lambda value: bounded_number(value, 1024, 65535, True), default=8780)
@@ -88,7 +89,7 @@ def main(argv=None):
                     "views": args.views,
                     "max_points": args.max_points,
                 }
-            return start_auto(args.workspace, request, args.task, args.start_delay)
+            return start_auto(args.workspace, request, args.task, args.start_delay, args.launch_cancel)
         if args.command in ("doctor", "probe"):
             return run_probe(args.workspace, args.command, args.count, args.interval, args.start_delay)
         from . import task
