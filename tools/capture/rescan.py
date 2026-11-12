@@ -135,7 +135,7 @@ def context_for(workspace, request, review_path, bundle_path):
         "审阅包来源与当前轮次不一致",
     )
     require(source["bundle_sha256"] in current_sources, "补采来源不属于当前轮次")
-    frames = {}
+    frames, source_requests, imported_actions = {}, {}, {}
     for entry in review["sources"]:
         root = project_root / "inputs" / entry["bundle_sha256"]
         actual = source if root == bundle_path else source_context(root)
@@ -145,10 +145,26 @@ def context_for(workspace, request, review_path, bundle_path):
         manifest = load_json(bundle_bytes, "bundle.json")
         hashes = {item["uri"]: item["sha256"] for item in manifest["files"]}
         data = read_verified(safe_path(root, "frames.jsonl"), hashes["frames.jsonl"], True)
+        automatic = (
+            load_json(
+                read_verified(safe_path(root, "auto-plan.json"), hashes["auto-plan.json"], True), "auto-plan.json"
+            )
+            if "auto-plan.json" in hashes
+            else {}
+        )
+        previous = automatic.get("rescan_request")
+        if previous and previous["project_id"] == request["project_id"]:
+            identity = previous["request_id"]
+            require(identity not in source_requests or source_requests[identity] == previous, "来源含冲突的补采请求")
+            source_requests[identity] = previous
+            imported_actions.setdefault(identity, set())
+        points = {point["waypoint_id"]: point for point in automatic.get("waypoints", [])}
         for frame in read_frames(data, task.make_validators()).values():
             key = (frame["session_id"], frame["frame_id"])
             require(key not in frames or frames[key]["frame"] == frame, "来源包含冲突的会话与帧")
             frames[key] = {"frame": frame, "root": root}
+            if previous and previous["project_id"] == request["project_id"] and frame["image"]["status"] == "captured":
+                imported_actions[previous["request_id"]].add(points[frame["waypoint_id"]]["rescan_action_id"])
     return {
         "workspace": workspace,
         "review_path": review_path,
@@ -160,22 +176,35 @@ def context_for(workspace, request, review_path, bundle_path):
             "auto-plan.json",
         ),
         "project": project,
+        "source_requests": source_requests,
+        "imported_actions": imported_actions,
     }
 
 
-def existing_actions(workspace, request, ignore_task=None):
-    result = set()
-    request_ids = set()
-    parent = workspace / "local/capture"
+def existing_actions(context, request, ignore_task=None):
+    known = dict(context["source_requests"])
+    parent = context["workspace"] / "local/capture"
     for path in sorted(parent.glob("*/task.json")):
         if path.parent.name == ignore_task:
             continue
         record = task.read_json(path).get("auto_plan", {}).get("rescan_request")
         if not record or record.get("project_id") != request["project_id"]:
             continue
-        request_ids.add(record["request_id"])
-        result.update((item["target_candidate_id"], item["heading_degrees"]) for item in record["actions"])
-    return request_ids, result
+        schema_check(record)
+        identity = record["request_id"]
+        require(identity not in known or known[identity] == record, "任务含冲突的补采请求")
+        known[identity] = record
+    seen = {
+        (action["target_candidate_id"], action["heading_degrees"])
+        for record in known.values()
+        for action in record["actions"]
+    }
+    used = sum(len(record["actions"]) for record in known.values())
+    reserved = sum(
+        len(record["actions"]) - len(context["imported_actions"].get(identity, set()))
+        for identity, record in known.items()
+    )
+    return set(known), seen, used, reserved
 
 
 def inspect_request(workspace, request, review_path, bundle_path, ignore_task=None):
@@ -189,13 +218,16 @@ def inspect_request(workspace, request, review_path, bundle_path, ignore_task=No
         for reference in issue["evidence"]:
             frame = context["frames"].get((reference["session_id"], reference["frame_id"]))
             require(frame is not None, "问题引用未知的帧或会话")
-    request_ids, seen = existing_actions(context["workspace"], request, ignore_task)
+    request_ids, seen, used, reserved = existing_actions(context, request, ignore_task)
     if request["request_id"] in request_ids:
         errors.append("该补采请求已生成任务，请查看或恢复已有任务")
     if len(request["actions"]) > request["budget"]["max_actions"]:
         errors.append("补采动作超出请求预算")
-    if len(seen) + len(request["actions"]) > context["project"]["policy"]["max_rescan_actions"]:
+    if used + len(request["actions"]) > context["project"]["policy"]["max_rescan_actions"]:
         errors.append("补采动作超出工程累计预算")
+    captured = sum(item["frame"]["image"]["status"] == "captured" for item in context["frames"].values())
+    if captured + reserved + len(request["actions"]) > context["project"]["policy"]["max_images"]:
+        errors.append("补采动作超出工程剩余截图预算，未并入轮次的暂停或失败任务仍保留预留")
     action_ids = set()
     actions = []
     for action in request["actions"]:
@@ -241,6 +273,12 @@ def inspect_request(workspace, request, review_path, bundle_path, ignore_task=No
         "actions": actions,
         "errors": errors,
         "source": context["source"],
+        "budget": {
+            "captured_images": captured,
+            "reserved_images": reserved,
+            "remaining_images": max(0, context["project"]["policy"]["max_images"] - captured - reserved),
+            "rescan_actions_used": used,
+        },
     }
 
 
