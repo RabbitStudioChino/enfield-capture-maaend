@@ -39,6 +39,58 @@ def check_environment_tree(venv):
                 raise ValueError(f"Linked existing virtual-environment entry is forbidden: {existing}")
 
 
+def environment_identity(venv):
+    lock = SOURCE_ROOT / "tools/capture/requirements-win.lock"
+    return {
+        "requirements_sha256": hashlib.sha256(lock.read_bytes()).hexdigest(),
+        "python": platform.python_version(),
+        "base_executable": str(Path(sys._base_executable).resolve()),
+        "base_prefix": str(Path(sys.base_prefix).resolve()),
+        "venv": str(venv.resolve()),
+    }
+
+
+def probe_environment(venv, environment, identity):
+    code = (
+        "import json, platform, sys; print(json.dumps({"
+        "'python': platform.python_version(), 'base_executable': sys._base_executable, "
+        "'base_prefix': sys.base_prefix, 'prefix': sys.prefix, 'executable': sys.executable}))"
+    )
+    try:
+        checked = subprocess.run(
+            [str(venv / "Scripts/python.exe"), "-I", "-B", "-c", code],
+            cwd=SOURCE_ROOT,
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=15,
+        )
+        actual = json.loads(checked.stdout)
+        expected = {
+            "base_executable": identity["base_executable"],
+            "base_prefix": identity["base_prefix"],
+            "prefix": identity["venv"],
+            "executable": str(venv / "Scripts/python.exe"),
+        }
+        return actual["python"] == identity["python"] and all(
+            Path(actual[key]).resolve() == Path(value).resolve() for key, value in expected.items()
+        )
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
+        return False
+
+
+def environment_ready(venv, environment, identity, allow_legacy=False):
+    try:
+        recorded = json.loads((venv / ".capture-ready.json").read_bytes())
+    except (OSError, ValueError):
+        return False
+    legacy = {key: identity[key] for key in ("requirements_sha256", "python")}
+    return (recorded == identity or (allow_legacy and recorded == legacy)) and probe_environment(
+        venv, environment, identity
+    )
+
+
 @contextmanager
 def installation_guard(workspace):
     directory = local_directory(workspace, "local/capture")
@@ -83,6 +135,14 @@ def launch_capture(workspace, command, arguments):
     environment.update(
         TMP=str(temporary), TEMP=str(temporary), TMPDIR=str(temporary), PYTHONUTF8="1", PYTHONDONTWRITEBYTECODE="1"
     )
+    if not environment_ready(venv, environment, environment_identity(venv), allow_legacy=True):
+        print(
+            "Capture environment does not match this package location or is not ready. "
+            "Run capture.cmd doctor or Start-Region-Capture.cmd from this directory to repair it first. "
+            "No capture command was sent.",
+            file=sys.stderr,
+        )
+        return 1
     try:
         return subprocess.run(
             [str(python), "-B", "-m", "tools.capture", command, "--workspace", str(workspace), *arguments],
@@ -155,12 +215,13 @@ def main():
             PIP_CONFIG_FILE=os.devnull,
         )
         lock = SOURCE_ROOT / "tools/capture/requirements-win.lock"
-        report["requirements_sha256"] = hashlib.sha256(lock.read_bytes()).hexdigest()
+        identity = environment_identity(venv)
+        report["requirements_sha256"] = identity["requirements_sha256"]
+        report["environment_identity"] = identity
         report["venv"] = str(venv)
         python = venv / "Scripts/python.exe"
         marker = venv / ".capture-ready.json"
-        identity = {"requirements_sha256": report["requirements_sha256"], "python": platform.python_version()}
-        ready = python.is_file() and marker.is_file() and json.loads(marker.read_bytes()) == identity
+        ready = environment_ready(venv, environment, identity)
         if ready:
             report["reused_environment"] = True
             print(
@@ -170,6 +231,7 @@ def main():
             report["status"] = "installed"
             exit_code = 0
         else:
+            print("Preparing the capture environment for the current package location.", flush=True)
             install_dependencies(workspace, run, venv, python, environment, lock, cache, marker, identity)
             report["status"] = "installed"
             exit_code = 0
@@ -221,10 +283,11 @@ def install_dependencies(workspace, run, venv, python, environment, lock, cache,
         description = "PyPI (source checkout without bundled wheels; network access is required)"
         failure_help = "Check access to pypi.org and files.pythonhosted.org, or use the updated Windows delivery with bundled wheels."
     with installation_guard(workspace):
+        marker.unlink(missing_ok=True)
         with (run / "logs/install.log").open("wb") as log:
             print("Creating the local Python environment (up to 120 seconds).", flush=True)
             subprocess.run(
-                [sys.executable, "-m", "venv", str(venv)],
+                [identity["base_executable"], "-m", "venv", str(venv)],
                 cwd=SOURCE_ROOT,
                 env=environment,
                 stdout=log,
@@ -271,6 +334,8 @@ def install_dependencies(workspace, run, venv, python, environment, lock, cache,
                 ) from error
             except subprocess.CalledProcessError as error:
                 raise RuntimeError(f"Dependency installation from {description} failed. {failure_help}") from error
+        if not probe_environment(venv, environment, identity):
+            raise RuntimeError("Prepared capture environment still points outside the current package location")
         write_json(marker, identity)
 
 

@@ -19,6 +19,8 @@ local\envs\capture-windows-py312\Scripts\python.exe -B -m tools.capture.server -
 
 服务绑定本机回环地址。端口被占用时需选择其它端口。所有任务、计划、日志和临时文件保存在所选工作区的 `local/`。
 
+整包移动到新的真实目录后，从新目录双击 `Start-Region-Capture.cmd` 或运行 `scripts\capture\capture.cmd doctor`。启动器继续按当前脚本计算根目录，并核对虚拟环境实际使用的基础 Python 和环境位置；发现旧位置或失效环境时，用当前包的 Python 原地刷新 `local/envs/capture-windows-py312`，再从随包 wheel 安装锁定依赖。无需手改 `pyvenv.cfg` 的 `home` 为相对路径，也无需删除其它 `local/` 数据。任务、选区、照片和日志均保留。`status`、`pause`、`stop` 等直接控制命令只检查环境，不自动安装依赖；环境指向旧位置时不会发送命令。请先在原运行窗口停止任务，再用新目录的启动入口修复环境。
+
 ## 选择区域并开始
 
 在游戏中进入大世界后，输入完整地名，或点击地图上的区域标记。目录从现有 `teleport_anchors.json`、SceneTeleport 锚点登记表及实际传送入口建立映射。“缘缘庄”对应武陵“祀的画”的真实传送锚点。名称未匹配或对应多个锚点时，页面要求选定明确区域。

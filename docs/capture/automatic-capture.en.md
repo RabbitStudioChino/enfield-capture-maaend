@@ -19,6 +19,8 @@ local\envs\capture-windows-py312\Scripts\python.exe -B -m tools.capture.server -
 
 The service binds the local loopback address. Choose another port if the default is occupied. Tasks, plans, logs and temporary files stay under the selected workspace's `local/` directory.
 
+After moving the complete package to another real directory, double-click `Start-Region-Capture.cmd` there or run `scripts\capture\capture.cmd doctor`. The launcher continues resolving the root from its current script and checks the virtual environment's actual base Python and location. If it finds an earlier location or a broken environment, it refreshes `local/envs/capture-windows-py312` in place using the current package's Python and installs locked dependencies from the bundled wheels. Do not rewrite `pyvenv.cfg`'s `home` as a relative path or delete other `local/` data. Tasks, selections, photos and logs remain intact. Direct controls such as `status`, `pause` and `stop` only check the environment and do not automatically install dependencies. They send no command when the environment points to an earlier location. Stop any task in its original running window, then repair the environment through the launch entry in the new directory.
+
 ## Select a region and start
 
 Enter the overworld in the game, then type a complete place name or select a region marker on the map. The catalog joins existing `teleport_anchors.json`, the SceneTeleport anchor registry and real teleport entries. “缘缘庄” corresponds to the real Yuanyuan Manor teleport anchor in Wuling, Si's Painting. An unmatched name or a name shared by multiple anchors requires an explicit region selection.

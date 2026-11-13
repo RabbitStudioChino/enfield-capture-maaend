@@ -8,13 +8,13 @@
 - 手动启动游戏并进入可自由观察的场景，保持唯一标题包含 `Endfield`、窗口类为 `UnityWndClass` 的游戏窗口。
 - 关闭 Windows HDR 与自动颜色管理，固定游戏分辨率与显示缩放。保持窗口可见、未最小化且位于前台，整个窗口完整位于显示器内，避免覆盖弹窗。
 - 采集进程与游戏使用相同权限等级。遇到权限错误时按报告确认游戏与终端的权限配置，再由用户重新启动对应程序。
-- 将新版交付 ZIP 解压到新的普通本地目录，例如 `D:\EndfieldCapture`，避免沿用旧目录的虚拟环境。目录及其 `local` 子目录应为真实目录，避免符号链接或 NTFS junction。
+- 将新版交付 ZIP 解压到普通本地目录，例如 `D:\EndfieldCapture`。停止采集任务并关闭服务后，可以移动整个包；从新目录运行启动入口时，启动器会检查并刷新本项目虚拟环境，保留其它本地数据，无需手改 `pyvenv.cfg`。目录及其 `local` 子目录应为真实目录，避免符号链接或 NTFS junction。
 
 探针只连接已经运行的游戏，输入方式固定为 `Null`，用户自行移动角色和镜头。连接和截图运行在独立 SDK 子进程中，发生超时或 Ctrl+C 后回收该子进程。`ScreenDC` 内部可能恢复游戏前台或移动窗口，前台与最小化检查只在检查边界生效，截图期间仍存在竞态。
 
 ## 一键运行
 
-1. 运行 `scripts\capture\capture.cmd doctor`。它先校验本地缓存的官方 Python 包，再展开到 `local\runtime\python-3.12.10`，随后创建 `local\envs\capture-windows-py312`，从包内 `local\cache\wheels` 离线安装锁定依赖。Python 与锁文件未变化时，后续运行复用已有环境。控制台显示环境与依赖安装进度，报告和日志留在 `local\validation\windows-capture\<run-id>`，失败后窗口保留。
+1. 运行 `scripts\capture\capture.cmd doctor`。它先校验本地缓存的官方 Python 包，再展开到 `local\runtime\python-3.12.10`，随后创建 `local\envs\capture-windows-py312`，从包内 `local\cache\wheels` 离线安装锁定依赖。Python、锁文件和环境位置匹配且实际解释器检查通过时，后续运行复用已有环境。刷新前使旧就绪标记失效，安装成功后才写入新标记；正在采集时拒绝修改环境，请先在原运行窗口停止任务。控制台显示环境与依赖安装进度，报告和日志留在 `local\validation\windows-capture\<run-id>`，失败后窗口保留。
 2. 安装结束后出现 5 秒倒计时，立即切回游戏并保持前台。`doctor` 检查系统、Python、SDK 版本、候选窗口、连接与一张原尺寸截图。
 3. 打开命令提示符并切换到解压目录，运行以下命令。出现倒计时后切回游戏，约每两秒手动换一个观察方向或位置，采集 12 次。
 
@@ -95,7 +95,7 @@ local/validation/windows-capture/<run-id>/
 
 Python 使用官方 NuGet `python/3.12.10` x64 包，缓存路径为 `local/cache/python/python.3.12.10.nupkg`。新版交付 ZIP 内置此缓存，首次准备 Python 可直接离线展开。固定 SHA-256 为 `0eb85c2dfccccf1b17352de4c397f69194035b7d37149eacc16f1147d93de3b8`，包内保留 CPython 许可。缓存缺失时下载限制为 120 秒并允许最多五次重定向，哈希通过后才展开，运行前检查版本、x64 架构、`venv` 与 `ensurepip`。[Python 官方 NuGet 说明](https://docs.python.org/3.12/using/windows.html#the-nuget-org-packages) [固定包版本](https://www.nuget.org/packages/python/3.12.10)
 
-全部 11 个锁定的 Windows wheel 随包保存在 `local/cache/wheels/`。打包时逐项检查版本、完整性与 SHA-256；首次安装使用 `--no-index --find-links`，保留 `--require-hashes --only-binary=:all:`，无需访问 PyPI。已有匹配 Python 版本和锁文件哈希的环境直接复用。交付包缺少 wheel 目录时拒绝安装；目录内缺包或哈希不符时安装失败，不联网回退。源码目录未提供 wheel 缓存时仍可从 PyPI 安装，300 秒整体超时或安装失败后会提示检查 `pypi.org`、`files.pythonhosted.org`，或改用完整离线交付包。
+全部 11 个锁定的 Windows wheel 随包保存在 `local/cache/wheels/`。打包时逐项检查版本、完整性与 SHA-256；首次安装使用 `--no-index --find-links`，保留 `--require-hashes --only-binary=:all:`，无需访问 PyPI。复用环境前检查 Python 版本、锁文件哈希、当前位置和解释器实际归属；位置改变或检查失败时重新准备本项目环境。交付包缺少 wheel 目录时拒绝安装；目录内缺包或哈希不符时安装失败，不联网回退。源码目录未提供 wheel 缓存时仍可从 PyPI 安装，300 秒整体超时或安装失败后会提示检查 `pypi.org`、`files.pythonhosted.org`，或改用完整离线交付包。
 
 锁文件固定 `maafw==5.14.3`、`numpy==2.5.4`、`pillow==13.0.0`、`strenum==0.5.0` 和 `maaagentbinary==1.0.1`，使用 Windows Python 3.12 x64 wheel 哈希。5.14.3 Windows x64 wheel 的 SHA-256 为 `5fcd48d85b2110150f19848da777564abe64e4ca64966704cb8dec948d243ce5`，与上游 `uv.lock` 及 PyPI 发布元数据一致。[PyPI 发布元数据](https://pypi.org/pypi/maafw/5.14.3/json)
 
